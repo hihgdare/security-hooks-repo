@@ -1,0 +1,65 @@
+# Definición de hooks para pre-commit
+# Este archivo define todos los hooks disponibles en este repositorio
+
+- id: security-scan
+  name: 🔍 Escaneo integral de seguridad
+  description: Ejecuta múltiples verificaciones de seguridad en el código
+  entry: scripts/security-scan.sh
+  language: script
+  files: \.(ts|tsx|js|jsx|json|py|go|rs|java|yml|yaml)$
+  exclude: '^(node_modules/|\.git/|dist/|build/|coverage/)'
+  require_serial: true
+  
+- id: secrets-detection
+  name: 🔐 Detección de secretos
+  description: Detecta API keys, tokens y credenciales hardcodeadas
+  entry: scripts/secrets-detection.sh
+  language: script
+  files: \.(ts|tsx|js|jsx|json|py|go|rs|java|yml|yaml|sh)$
+  exclude: '^(node_modules/|\.git/|dist/|build/|\.env\.example|\.env\.template)'
+  
+- id: url-hardcoded-check
+  name: 🌐 Verificación de URLs hardcodeadas
+  description: Detecta URLs de APIs que deberían estar en variables de entorno
+  entry: scripts/url-hardcoded-check.sh
+  language: script
+  files: \.(ts|tsx|js|jsx|py|go|rs|java)$
+  exclude: '^(node_modules/|\.git/|dist/|build/|.*\.test\.|.*\.spec\.|.*\.mock\.)'
+
+- id: dependency-vulnerabilities
+  name: 🛡️ Vulnerabilidades en dependencias
+  description: Escanea dependencias en busca de vulnerabilidades conocidas
+  entry: scripts/dependency-vulnerabilities.sh
+  language: script
+  files: '^(package\.json|package-lock\.json|yarn\.lock|bun\.lockb|requirements\.txt|Pipfile\.lock|go\.mod|Cargo\.lock|composer\.json|composer\.lock)$'
+  require_serial: true
+
+- id: dockerfile-security
+  name: 🐳 Seguridad de Dockerfile
+  description: Verifica configuraciones seguras en Dockerfiles
+  entry: scripts/dockerfile-security.sh
+  language: script
+  files: '^.*Dockerfile.*$|^.*\.dockerfile$'
+
+- id: terraform-security
+  name: 🏗️ Seguridad de Terraform
+  description: Verifica configuraciones seguras en archivos Terraform
+  entry: scripts/terraform-security.sh
+  language: script
+  files: '^.*\.tf$|^.*\.tfvars$'
+
+- id: post-commit-notification
+  name: 📬 Notificación post-commit
+  description: Envía notificaciones después de commits exitosos
+  entry: scripts/post-commit-notification.sh
+  language: script
+  stages: [post-commit]
+  always_run: true
+
+- id: post-commit-security-report
+  name: 📊 Reporte de seguridad post-commit
+  description: Genera reportes de seguridad después de commits
+  entry: scripts/post-commit-security-report.sh
+  language: script
+  stages: [post-commit]
+  always_run: true
