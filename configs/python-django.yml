@@ -1,0 +1,132 @@
+# Configuración ejemplo para proyectos Python
+project:
+  name: "python-app"
+  type: "python"
+  framework: "django" # or "flask", "fastapi", "none"
+
+# Configuración específica de detección de secretos para Python
+secrets_detection:
+  exclude_patterns:
+    - "__pycache__/**"
+    - "*.pyc"
+    - "venv/**"
+    - "env/**"
+    - ".venv/**"
+    - "site-packages/**"
+    - "*.egg-info/**"
+    - "build/**"
+    - "dist/**"
+    - "*.test.py"
+    - "test_*.py"
+    - "*_test.py"
+    - "tests/**"
+    - "*.example.py"
+  
+  # Patrones específicos de Python a vigilar
+  python_specific_patterns:
+    - "SECRET_KEY\s*=\s*['\"][^'\"]{20,}"
+    - "DATABASE_PASSWORD\s*=\s*['\"][^'\"]{8,}"
+    - "DJANGO_SECRET_KEY"
+    - "FLASK_SECRET_KEY"
+
+# URLs permitidas para proyectos Python
+url_check:
+  allowed_domains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+    - "example.com"
+    - "python.org"
+    - "pypi.org"
+    - "github.com"
+    - "djangoproject.com"
+    - "flask.palletsprojects.com"
+    - "fastapi.tiangolo.com"
+
+# Configuración de linting para Python
+linting:
+  black:
+    enabled: true
+    line_length: 88
+  
+  flake8:
+    enabled: true
+    max_line_length: 88
+    ignore:
+      - "E203"
+      - "W503"
+  
+  pylint:
+    enabled: false
+  
+  bandit:
+    enabled: true
+    severity: "medium"
+    exclude_tests: true
+
+# Verificaciones específicas de Python
+python_checks:
+  check_imports: true
+  check_syntax: true
+  check_security_issues: true
+  check_django_settings: true # Si es proyecto Django
+  check_sql_injection: true
+  check_xss_vulnerabilities: true
+
+# Configuración de dependencias Python
+dependencies:
+  tools:
+    - "pip-audit"
+    - "safety"
+  
+  audit_level: "moderate"
+  exclude_dev_dependencies: false
+  
+  # Paquetes críticos
+  critical_packages:
+    - "django"
+    - "flask"
+    - "fastapi"
+    - "requests"
+    - "sqlalchemy"
+
+# Configuración específica de Django
+django:
+  check_settings:
+    - "DEBUG"
+    - "SECRET_KEY"
+    - "ALLOWED_HOSTS"
+    - "CORS_ALLOW_ALL_ORIGINS"
+  
+  security_middleware:
+    - "django.middleware.security.SecurityMiddleware"
+    - "django.middleware.csrf.CsrfViewMiddleware"
+
+# Configuración específica de Flask
+flask:
+  check_settings:
+    - "SECRET_KEY"
+    - "DEBUG"
+    - "TESTING"
+  
+  security_headers:
+    - "Content-Security-Policy"
+    - "X-Content-Type-Options"
+    - "X-Frame-Options"
+
+# Notificaciones
+notifications:
+  enabled: false
+  channels:
+    slack:
+      webhook: ""
+      channel: "#backend-security"
+
+# Reportes
+reports:
+  enabled: true
+  include_metrics:
+    - "dependency_vulnerabilities"
+    - "code_security_issues"
+    - "django_security_checklist" # Si aplica
+    - "performance_bottlenecks"

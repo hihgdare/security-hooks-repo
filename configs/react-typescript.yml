@@ -1,0 +1,121 @@
+# Configuración ejemplo para proyectos React/TypeScript
+project:
+  name: "react-app"
+  type: "react-typescript"
+  framework: "react"
+  build_tool: "vite" # or "webpack", "create-react-app"
+
+# Configuración específica de detección de secretos para React
+secrets_detection:
+  exclude_patterns:
+    - "node_modules/**"
+    - "dist/**"
+    - "build/**"
+    - "coverage/**"
+    - "public/**"
+    - "*.test.ts"
+    - "*.test.tsx"
+    - "*.spec.ts"
+    - "*.spec.tsx"
+    - "*.stories.ts"
+    - "*.stories.tsx"
+    - "*.example.*"
+    - "*.template.*"
+  
+  # Patrones específicos de React a vigilar
+  react_specific_patterns:
+    - "REACT_APP_.*_SECRET"
+    - "REACT_APP_.*_KEY"
+    - "VITE_.*_SECRET"
+    - "VITE_.*_KEY"
+
+# URLs permitidas para proyectos React
+url_check:
+  allowed_domains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+    - "example.com"
+    - "placeholder.com"
+    - "github.com"
+    - "npmjs.com"
+    - "unpkg.com"
+    - "jsdelivr.net"
+    - "cdnjs.cloudflare.com"
+    - "fonts.googleapis.com"
+    - "fonts.gstatic.com"
+    - "api.github.com"
+    - "raw.githubusercontent.com"
+  
+  # Dominios específicos de React/Frontend
+  frontend_allowed:
+    - "reactjs.org"
+    - "vitejs.dev"
+    - "webpack.js.org"
+    - "babeljs.io"
+    - "typescript.org"
+
+# Configuración de ESLint para React
+linting:
+  eslint:
+    enabled: true
+    config: "@typescript-eslint/recommended"
+    rules:
+      - "react-hooks/exhaustive-deps"
+      - "react/no-danger"
+      - "react/jsx-no-script-url"
+      - "@typescript-eslint/no-explicit-any"
+  
+  prettier:
+    enabled: true
+    config:
+      semi: true
+      singleQuote: true
+      tabWidth: 2
+
+# Verificaciones específicas de React
+react_checks:
+  check_console_logs: true
+  check_debugger: true
+  check_todo_comments: true
+  check_jsx_security: true
+  check_prop_types: false # Si no usas TypeScript
+  check_accessibility: true
+
+# Configuración de dependencias
+dependencies:
+  audit_level: "moderate"
+  exclude_dev_dependencies: false
+  
+  # Dependencias críticas para React
+  critical_packages:
+    - "react"
+    - "react-dom"
+    - "@types/react"
+    - "@types/react-dom"
+
+# Notificaciones específicas para proyectos frontend
+notifications:
+  enabled: false
+  channels:
+    slack:
+      webhook: ""
+      channel: "#frontend-security"
+    discord:
+      webhook: ""
+    email:
+      enabled: false
+
+# Reportes de seguridad
+reports:
+  enabled: true
+  format: "json"
+  include_metrics:
+    - "bundle_size_analysis"
+    - "dependency_tree"
+    - "security_hotspots"
+    - "performance_hints"
+  
+  retention:
+    keep_last: 20
+    max_size_mb: 50
