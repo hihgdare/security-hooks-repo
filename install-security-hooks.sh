@@ -99,7 +99,6 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
-      - id: end-of-file-fixer
       - id: check-yaml
       - id: check-json
       - id: check-merge-conflict
