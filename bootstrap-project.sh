@@ -59,7 +59,7 @@ repos:
 
   # Security hooks centralizados
   - repo: https://github.com/hihgdare/security-hooks-repo
-    rev: v1.0.1
+    rev: v1.0.4
     hooks:
       - id: security-scan
       - id: secrets-detection
@@ -67,6 +67,7 @@ repos:
       - id: dependency-vulnerabilities
 
 # Configuración global
+fail_fast: true
 ci:
   autofix_prs: true
   autoupdate_schedule: weekly

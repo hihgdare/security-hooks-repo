@@ -194,5 +194,6 @@ if [ $ERRORS -eq 0 ]; then
 else
     echo -e "${RED}❌ Se encontraron $ERRORS errores críticos${NC}"
     echo -e "${RED}🚫 Commit bloqueado hasta resolver los problemas${NC}"
+    echo -e "${RED}🚫 SECURITY SCAN FAILED - COMMIT REJECTED${NC}"
     exit 1
 fi
