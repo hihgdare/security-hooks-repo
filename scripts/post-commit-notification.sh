@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Post-commit notification hook
 # Envía notificaciones después de commits exitosos

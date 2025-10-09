@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Verificación de URLs hardcodeadas
 # Este script detecta URLs de APIs que deberían estar en variables de entorno

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Post-commit security report
 # Genera reportes de seguridad después de commits

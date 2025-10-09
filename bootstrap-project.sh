@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Bootstrap script para cualquier proyecto que quiera usar los security hooks
 # Este script se descarga y ejecuta desde cualquier proyecto

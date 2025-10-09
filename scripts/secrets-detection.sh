@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Detección de secretos y credenciales hardcodeadas
 # Este script busca patrones de API keys, tokens y otros secretos

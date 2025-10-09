@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Escaneo integral de seguridad
 # Este script ejecuta múltiples verificaciones de seguridad

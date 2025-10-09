@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Verificación de vulnerabilidades en dependencias
 # Este script escanea archivos de dependencias en busca de vulnerabilidades conocidas

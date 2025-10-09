@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Instalador de pre-commit para proyectos
 # Este script instala y configura pre-commit en cualquier proyecto
