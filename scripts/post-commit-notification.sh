@@ -13,8 +13,21 @@ NC='\033[0m'
 
 echo -e "${BLUE}📬 Ejecutando notificaciones post-commit...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Configuración
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+
+# Normalizar paths para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+fi
+
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 COMMIT_HASH=$(git rev-parse HEAD)
 COMMIT_MESSAGE=$(git log -1 --pretty=%B)
@@ -256,3 +269,8 @@ if [ "$UNPUSHED_COMMITS" -gt 0 ]; then
 fi
 
 echo -e "\n${GREEN}✅ Post-commit hook completado${NC}"
+
+# Flush output para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    exec 1>&1 2>&2
+fi

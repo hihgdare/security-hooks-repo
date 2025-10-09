@@ -14,12 +14,30 @@ NC='\033[0m'
 
 echo -e "${BLUE}🛡️ Verificando vulnerabilidades en dependencias...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Configuración
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+
+# Normalizar paths para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+fi
+
 cd "$PROJECT_ROOT"
 
 # Archivos de dependencias modificados
 DEP_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(package\.json|package-lock\.json|yarn\.lock|bun\.lockb|requirements\.txt|Pipfile\.lock|go\.mod|Cargo\.lock|composer\.json|composer\.lock)$' || true)
+
+# En Windows, normalizar separadores de path
+if [ "$IS_WINDOWS" = true ]; then
+    DEP_FILES=$(echo "$DEP_FILES" | sed 's|\\|/|g')
+fi
 
 if [ -z "$DEP_FILES" ]; then
     echo -e "${GREEN}✅ No se modificaron archivos de dependencias${NC}"
@@ -234,14 +252,21 @@ if [ "$VULNERABILITIES_FOUND" = true ]; then
     if [ "$CRITICAL_VULNS" -gt 0 ] || [ "$HIGH_VULNS" -gt 0 ]; then
         echo -e "${RED}❌ Vulnerabilidades críticas o altas encontradas${NC}"
         echo -e "${RED}🚫 Se recomienda no proceder hasta resolver las vulnerabilidades${NC}"
+        echo -e "${RED}🚫 DEPENDENCY VULNERABILITIES FOUND - COMMIT REJECTED${NC}"
+        # Flush output para Windows
+        exec 1>&1 2>&2
         exit 1
     else
         echo -e "${YELLOW}⚠️  Vulnerabilidades menores encontradas${NC}"
         echo -e "${YELLOW}📋 Revisar y planificar actualizaciones${NC}"
         echo -e "${GREEN}✅ Commit permitido con advertencia${NC}"
+        # Flush output para Windows
+        exec 1>&1 2>&2
         exit 0
     fi
 else
     echo -e "${GREEN}✅ No se detectaron vulnerabilidades críticas${NC}"
+    # Flush output para Windows
+    exec 1>&1 2>&2
     exit 0
 fi

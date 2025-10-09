@@ -14,10 +14,23 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔍 Iniciando escaneo integral de seguridad...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Configuración
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 CONFIG_FILE="$PROJECT_ROOT/.security-config.yml"
+
+# Normalizar paths para Windows
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    SCRIPT_DIR=$(cygpath -u "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
+    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+fi
 
 # Cargar configuración si existe
 if [ -f "$CONFIG_FILE" ]; then
@@ -45,6 +58,11 @@ ERRORS=0
 echo -e "${BLUE}📁 Analizando archivos modificados...${NC}"
 FILES_CHANGED=$(git diff --cached --name-only --diff-filter=ACM)
 
+# En Windows, normalizar separadores de path
+if [ "$IS_WINDOWS" = true ]; then
+    FILES_CHANGED=$(echo "$FILES_CHANGED" | sed 's|\\|/|g')
+fi
+
 if [ -z "$FILES_CHANGED" ]; then
     echo -e "${YELLOW}⚠️  No hay archivos en staging para verificar${NC}"
     exit 0
@@ -52,6 +70,16 @@ fi
 
 echo "Archivos a verificar:"
 echo "$FILES_CHANGED" | sed 's/^/  - /'
+
+# Diagnóstico para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    echo -e "${BLUE}🔧 Diagnóstico Windows:${NC}"
+    echo "  - OSTYPE: $OSTYPE"
+    echo "  - Shell: $0"
+    echo "  - Git version: $(git --version 2>/dev/null || echo 'No disponible')"
+    echo "  - Script dir: $SCRIPT_DIR"
+    echo "  - Project root: $PROJECT_ROOT"
+fi
 
 # 1. Verificar archivos de entorno
 echo -e "\n${BLUE}🔒 Verificando archivos de entorno...${NC}"
@@ -65,13 +93,23 @@ fi
 
 # 2. Ejecutar detección de secretos
 echo -e "\n${BLUE}🔐 Ejecutando detección de secretos...${NC}"
-if ! "$SCRIPT_DIR/secrets-detection.sh"; then
+set +e  # Temporalmente deshabilitar exit en error para capturar código
+"$SCRIPT_DIR/secrets-detection.sh"
+SECRETS_EXIT_CODE=$?
+set -e  # Re-habilitar exit en error
+if [ $SECRETS_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}❌ Detección de secretos falló${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
 # 3. Verificar URLs hardcodeadas
 echo -e "\n${BLUE}🌐 Verificando URLs hardcodeadas...${NC}"
-if ! "$SCRIPT_DIR/url-hardcoded-check.sh"; then
+set +e  # Temporalmente deshabilitar exit en error para capturar código
+"$SCRIPT_DIR/url-hardcoded-check.sh"
+URL_EXIT_CODE=$?
+set -e  # Re-habilitar exit en error
+if [ $URL_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}❌ Verificación de URLs falló${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -190,10 +228,14 @@ echo -e "\n${BLUE}📊 Resumen del escaneo de seguridad:${NC}"
 if [ $ERRORS -eq 0 ]; then
     echo -e "${GREEN}✅ Todas las verificaciones críticas pasaron exitosamente${NC}"
     echo -e "${GREEN}🎉 Commit aprobado para continuar${NC}"
+    # Flush output para Windows
+    exec 1>&1 2>&2
     exit 0
 else
     echo -e "${RED}❌ Se encontraron $ERRORS errores críticos${NC}"
     echo -e "${RED}🚫 Commit bloqueado hasta resolver los problemas${NC}"
     echo -e "${RED}🚫 SECURITY SCAN FAILED - COMMIT REJECTED${NC}"
+    # Flush output para Windows
+    exec 1>&1 2>&2
     exit 1
 fi

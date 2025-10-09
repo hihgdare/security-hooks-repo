@@ -17,6 +17,13 @@ RAW_URL="https://raw.githubusercontent.com/hihgdare/security-hooks-repo/main"
 
 echo -e "${BLUE}🔧 Configurando Security Hooks desde repositorio central...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Verificar que estamos en un repositorio Git
 if [ ! -d ".git" ]; then
     echo -e "${RED}❌ Error: Debe ejecutarse desde la raíz de un repositorio Git${NC}"
@@ -59,7 +66,7 @@ repos:
 
   # Security hooks centralizados
   - repo: https://github.com/hihgdare/security-hooks-repo
-    rev: v1.0.4
+    rev: v1.0.6
     hooks:
       - id: security-scan
       - id: secrets-detection
@@ -80,3 +87,8 @@ echo -e "${BLUE}🚀 Ejecutando instalación...${NC}"
 
 echo -e "${GREEN}✅ ¡Configuración completada!${NC}"
 echo -e "${BLUE}💡 Los hooks de seguridad están ahora activos en este proyecto${NC}"
+
+# Flush output para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    exec 1>&1 2>&2
+fi

@@ -14,10 +14,23 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔐 Ejecutando detección de secretos...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Configuración
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 CONFIG_FILE="$PROJECT_ROOT/.security-config.yml"
+
+# Normalizar paths para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    SCRIPT_DIR=$(cygpath -u "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
+    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+fi
 
 # Patrones de secretos a detectar
 PATTERNS=(
@@ -91,6 +104,11 @@ PATTERNS=(
 
 # Archivos a verificar
 FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json|py|go|rs|java|yml|yaml|sh|env)$' | grep -v -E '^(node_modules/|\.git/|dist/|build/|\.env\.example|\.env\.template)' || true)
+
+# En Windows, normalizar separadores de path
+if [ "$IS_WINDOWS" = true ]; then
+    FILES=$(echo "$FILES" | sed 's|\\|/|g')
+fi
 
 if [ -z "$FILES" ]; then
     echo -e "${GREEN}✅ No hay archivos relevantes para verificar${NC}"
@@ -181,8 +199,13 @@ if [ "$SECRETS_FOUND" = true ]; then
     echo -e "${YELLOW}4. Para variables frontend, usar prefijos seguros (VITE_, NEXT_PUBLIC_, etc.)${NC}"
     echo ""
     echo -e "${RED}🚫 Commit bloqueado por seguridad${NC}"
+    echo -e "${RED}🚫 SECRETS DETECTION FAILED - COMMIT REJECTED${NC}"
+    # Flush output para Windows
+    exec 1>&1 2>&2
     exit 1
 else
     echo -e "${GREEN}✅ No se detectaron secretos hardcodeados${NC}"
+    # Flush output para Windows
+    exec 1>&1 2>&2
     exit 0
 fi

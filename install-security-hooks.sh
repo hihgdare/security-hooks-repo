@@ -15,6 +15,13 @@ NC='\033[0m'
 echo -e "${BLUE}🔧 Instalador de Pre-commit Security Hooks${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Verificar que estamos en un repositorio Git
 if [ ! -d ".git" ]; then
     echo -e "${RED}❌ Error: Este script debe ejecutarse desde la raíz de un repositorio Git${NC}"

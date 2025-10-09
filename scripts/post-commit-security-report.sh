@@ -14,11 +14,30 @@ NC='\033[0m'
 
 echo -e "${BLUE}📊 Generando reporte de seguridad post-commit...${NC}"
 
+# Detectar entorno Windows
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    IS_WINDOWS=true
+    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
 # Configuración
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+
+# Normalizar paths para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+fi
+
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 COMMIT_HASH=$(git rev-parse HEAD)
 REPORT_DIR="$PROJECT_ROOT/.security-reports"
+
+# En Windows, asegurar que el path del directorio sea correcto
+if [ "$IS_WINDOWS" = true ]; then
+    REPORT_DIR=$(echo "$REPORT_DIR" | sed 's|\\|/|g')
+fi
+
 REPORT_FILE="$REPORT_DIR/security-report-$(date +%Y%m%d-%H%M%S).json"
 
 # Crear directorio de reportes si no existe
@@ -296,3 +315,8 @@ fi
 
 echo -e "${GREEN}📊 Ver reporte completo en: ${REPORT_FILE#$PROJECT_ROOT/}${NC}"
 echo -e "${GREEN}✅ Reporte de seguridad post-commit completado${NC}"
+
+# Flush output para Windows
+if [ "$IS_WINDOWS" = true ]; then
+    exec 1>&1 2>&2
+fi
