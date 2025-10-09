@@ -14,11 +14,27 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔐 Ejecutando detección de secretos...${NC}"
 
-# Detectar entorno Windows
+# Detectar entorno Windows/PowerShell
 IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+IS_POWERSHELL=false
+
+# Detectar Windows por múltiples métodos
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
     IS_WINDOWS=true
-    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
+# Detectar PowerShell
+if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
+    IS_POWERSHELL=true
+    IS_WINDOWS=true
+fi
+
+if [ "$IS_WINDOWS" = true ]; then
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
+    else
+        echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+    fi
 fi
 
 # Configuración
@@ -189,6 +205,7 @@ fi
 
 # Resultado final
 echo -e "\n${BLUE}📊 Resumen de detección de secretos:${NC}"
+
 if [ "$SECRETS_FOUND" = true ]; then
     echo -e "${RED}❌ Se encontraron $TOTAL_MATCHES patrones de secretos${NC}"
     echo ""
@@ -200,11 +217,26 @@ if [ "$SECRETS_FOUND" = true ]; then
     echo ""
     echo -e "${RED}🚫 Commit bloqueado por seguridad${NC}"
     echo -e "${RED}🚫 SECRETS DETECTION FAILED - COMMIT REJECTED${NC}"
+    
+    # Manejo específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "SECRETS FOUND: $TOTAL_MATCHES" >&2
+        echo "RESULT: BLOCKED" >&2
+        sleep 0.1
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
     exit 1
 else
     echo -e "${GREEN}✅ No se detectaron secretos hardcodeados${NC}"
+    
+    # Manejo específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "RESULT: SUCCESS"
+        sleep 0.1
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
     exit 0

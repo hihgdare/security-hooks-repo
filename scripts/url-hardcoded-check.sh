@@ -14,11 +14,27 @@ NC='\033[0m'
 
 echo -e "${BLUE}🌐 Verificando URLs hardcodeadas...${NC}"
 
-# Detectar entorno Windows
+# Detectar entorno Windows/PowerShell
 IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+IS_POWERSHELL=false
+
+# Detectar Windows por múltiples métodos
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
     IS_WINDOWS=true
-    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
+# Detectar PowerShell
+if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
+    IS_POWERSHELL=true
+    IS_WINDOWS=true
+fi
+
+if [ "$IS_WINDOWS" = true ]; then
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
+    else
+        echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+    fi
 fi
 
 # Configuración
@@ -227,11 +243,26 @@ if [ "$URLS_FOUND" = true ]; then
     echo ""
     echo -e "${RED}🚫 Commit bloqueado por URLs hardcodeadas${NC}"
     echo -e "${RED}🚫 URL CHECK FAILED - COMMIT REJECTED${NC}"
+    
+    # Manejo específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "HARDCODED URLS FOUND: $TOTAL_URLS" >&2
+        echo "RESULT: BLOCKED" >&2
+        sleep 0.1
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
     exit 1
 else
     echo -e "${GREEN}✅ No se encontraron URLs problemáticas hardcodeadas${NC}"
+    
+    # Manejo específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "RESULT: SUCCESS"
+        sleep 0.1
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
     exit 0

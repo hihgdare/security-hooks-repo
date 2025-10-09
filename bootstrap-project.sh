@@ -15,13 +15,27 @@ NC='\033[0m'
 REPO_URL="https://github.com/hihgdare/security-hooks-repo"
 RAW_URL="https://raw.githubusercontent.com/hihgdare/security-hooks-repo/main"
 
-echo -e "${BLUE}🔧 Configurando Security Hooks desde repositorio central...${NC}"
-
-# Detectar entorno Windows
+# Detectar entorno Windows/PowerShell
 IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+IS_POWERSHELL=false
+
+# Detectar Windows por múltiples métodos
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
     IS_WINDOWS=true
-    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
+# Detectar PowerShell
+if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
+    IS_POWERSHELL=true
+    IS_WINDOWS=true
+fi
+
+if [ "$IS_WINDOWS" = true ]; then
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
+    else
+        echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+    fi
 fi
 
 # Verificar que estamos en un repositorio Git
@@ -49,6 +63,12 @@ chmod +x scripts/install-precommit-required.sh
 # Crear .pre-commit-config.yaml básico
 if [ ! -f ".pre-commit-config.yaml" ]; then
     echo -e "${BLUE}📝 Creando .pre-commit-config.yaml...${NC}"
+    
+    # Configuración específica para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo -e "${BLUE}🔵 Aplicando configuración optimizada para PowerShell${NC}"
+    fi
+    
     cat > .pre-commit-config.yaml << 'YAML_EOF'
 # Configuración de Pre-commit Hooks
 repos:

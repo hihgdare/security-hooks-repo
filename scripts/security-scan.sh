@@ -14,11 +14,27 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔍 Iniciando escaneo integral de seguridad...${NC}"
 
-# Detectar entorno Windows
+# Detectar entorno Windows/PowerShell
 IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+IS_POWERSHELL=false
+
+# Detectar Windows por múltiples métodos
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
     IS_WINDOWS=true
-    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+fi
+
+# Detectar PowerShell
+if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
+    IS_POWERSHELL=true
+    IS_WINDOWS=true
+fi
+
+if [ "$IS_WINDOWS" = true ]; then
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
+    else
+        echo -e "${BLUE}� Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+    fi
 fi
 
 # Configuración
@@ -71,14 +87,22 @@ fi
 echo "Archivos a verificar:"
 echo "$FILES_CHANGED" | sed 's/^/  - /'
 
-# Diagnóstico para Windows
+# Diagnóstico para Windows/PowerShell
 if [ "$IS_WINDOWS" = true ]; then
-    echo -e "${BLUE}🔧 Diagnóstico Windows:${NC}"
+    echo -e "${BLUE}🔧 Diagnóstico Windows/PowerShell:${NC}"
     echo "  - OSTYPE: $OSTYPE"
     echo "  - Shell: $0"
+    echo "  - PowerShell: $IS_POWERSHELL"
     echo "  - Git version: $(git --version 2>/dev/null || echo 'No disponible')"
     echo "  - Script dir: $SCRIPT_DIR"
     echo "  - Project root: $PROJECT_ROOT"
+    
+    # Variables específicas de PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "  - WINDIR: ${WINDIR:-'No definido'}"
+        echo "  - SYSTEMROOT: ${SYSTEMROOT:-'No definido'}"
+        echo "  - POWERSHELL_DISTRIBUTION_CHANNEL: ${POWERSHELL_DISTRIBUTION_CHANNEL:-'No definido'}"
+    fi
 fi
 
 # 1. Verificar archivos de entorno
@@ -97,6 +121,12 @@ set +e  # Temporalmente deshabilitar exit en error para capturar código
 "$SCRIPT_DIR/secrets-detection.sh"
 SECRETS_EXIT_CODE=$?
 set -e  # Re-habilitar exit en error
+
+# Manejo específico para PowerShell
+if [ "$IS_POWERSHELL" = true ] && [ $SECRETS_EXIT_CODE -ne 0 ]; then
+    echo "SECRETS DETECTION FAILED" >&2
+fi
+
 if [ $SECRETS_EXIT_CODE -ne 0 ]; then
     echo -e "${RED}❌ Detección de secretos falló${NC}"
     ERRORS=$((ERRORS + 1))
@@ -108,6 +138,12 @@ set +e  # Temporalmente deshabilitar exit en error para capturar código
 "$SCRIPT_DIR/url-hardcoded-check.sh"
 URL_EXIT_CODE=$?
 set -e  # Re-habilitar exit en error
+
+# Manejo específico para PowerShell
+if [ "$IS_POWERSHELL" = true ] && [ $URL_EXIT_CODE -ne 0 ]; then
+    echo "URL CHECK FAILED" >&2
+fi
+
 if [ $URL_EXIT_CODE -ne 0 ]; then
     echo -e "${RED}❌ Verificación de URLs falló${NC}"
     ERRORS=$((ERRORS + 1))
@@ -225,9 +261,24 @@ fi
 
 # Resultado final
 echo -e "\n${BLUE}📊 Resumen del escaneo de seguridad:${NC}"
+
+# En PowerShell, forzar salida inmediata y visible
+if [ "$IS_POWERSHELL" = true ]; then
+    echo ""
+    echo "=== SECURITY SCAN RESULT ==="
+fi
+
 if [ $ERRORS -eq 0 ]; then
     echo -e "${GREEN}✅ Todas las verificaciones críticas pasaron exitosamente${NC}"
     echo -e "${GREEN}🎉 Commit aprobado para continuar${NC}"
+    
+    # Flush específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo "RESULT: SUCCESS"
+        echo "=== END SECURITY SCAN ==="
+        sleep 0.1  # Pequeña pausa para PowerShell
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
     exit 0
@@ -235,7 +286,25 @@ else
     echo -e "${RED}❌ Se encontraron $ERRORS errores críticos${NC}"
     echo -e "${RED}🚫 Commit bloqueado hasta resolver los problemas${NC}"
     echo -e "${RED}🚫 SECURITY SCAN FAILED - COMMIT REJECTED${NC}"
+    
+    # Manejo específico para PowerShell
+    if [ "$IS_POWERSHELL" = true ]; then
+        echo ""
+        echo "RESULT: FAILED"
+        echo "ERRORS: $ERRORS"
+        echo "=== END SECURITY SCAN ==="
+        # En PowerShell, escribir a stderr también
+        echo "SECURITY SCAN FAILED - COMMIT BLOCKED" >&2
+        sleep 0.1  # Pequeña pausa para PowerShell
+    fi
+    
     # Flush output para Windows
     exec 1>&1 2>&2
-    exit 1
+    
+    # En PowerShell, usar exit más agresivo
+    if [ "$IS_POWERSHELL" = true ]; then
+        exit 1
+    else
+        exit 1
+    fi
 fi
