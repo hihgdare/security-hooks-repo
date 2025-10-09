@@ -83,8 +83,10 @@ TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
 if [ -n "$TS_JS_FILES" ]; then
     if command -v tsc >/dev/null 2>&1; then
         echo "Verificando TypeScript..."
-        if ! tsc --noEmit --skipLibCheck; then
-            echo -e "${RED}❌ Errores de TypeScript encontrados${NC}"
+        TS_OUTPUT=$(tsc --noEmit --skipLibCheck 2>&1)
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ Errores de TypeScript encontrados:${NC}"
+            echo "$TS_OUTPUT" | grep -E "error TS[0-9]+:" | head -10
             ERRORS=$((ERRORS + 1))
         else
             show_result 0 "Verificación de TypeScript exitosa"
@@ -93,8 +95,10 @@ if [ -n "$TS_JS_FILES" ]; then
         echo "Verificando sintaxis JavaScript básica..."
         for file in $TS_JS_FILES; do
             if [ -f "$file" ]; then
-                if ! node -c "$file" 2>/dev/null; then
-                    echo -e "${RED}❌ Error de sintaxis en $file${NC}"
+                JS_ERROR=$(node -c "$file" 2>&1)
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}❌ Error de sintaxis en $file:${NC}"
+                    echo "$JS_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
@@ -112,8 +116,10 @@ if [ -n "$PY_FILES" ]; then
         echo "Verificando sintaxis Python..."
         for file in $PY_FILES; do
             if [ -f "$file" ]; then
-                if ! python3 -m py_compile "$file" 2>/dev/null; then
-                    echo -e "${RED}❌ Error de sintaxis en $file${NC}"
+                PY_ERROR=$(python3 -m py_compile "$file" 2>&1)
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}❌ Error de sintaxis en $file:${NC}"
+                    echo "$PY_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
@@ -131,13 +137,17 @@ if [ -n "$JSON_FILES" ]; then
     for file in $JSON_FILES; do
         if [ -f "$file" ]; then
             if command -v jq >/dev/null 2>&1; then
-                if ! jq empty "$file" >/dev/null 2>&1; then
-                    echo -e "${RED}❌ JSON inválido en $file${NC}"
+                JSON_ERROR=$(jq empty "$file" 2>&1)
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}❌ JSON inválido en $file:${NC}"
+                    echo "$JSON_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             elif command -v python3 >/dev/null 2>&1; then
-                if ! python3 -m json.tool "$file" >/dev/null 2>&1; then
-                    echo -e "${RED}❌ JSON inválido en $file${NC}"
+                JSON_ERROR=$(python3 -m json.tool "$file" 2>&1)
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}❌ JSON inválido en $file:${NC}"
+                    echo "$JSON_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
