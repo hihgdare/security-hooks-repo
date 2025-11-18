@@ -14,9 +14,16 @@ NC='\033[0m'
 
 echo -e "${BLUE}🌐 Verificando URLs hardcodeadas...${NC}"
 
-# Detectar entorno Windows/PowerShell
+# Detectar entorno (Windows/PowerShell/macOS)
 IS_WINDOWS=false
 IS_POWERSHELL=false
+IS_MACOS=false
+
+# Detectar macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    IS_MACOS=true
+    echo -e "${BLUE}🍎 macOS detectado - aplicando ajustes de compatibilidad${NC}"
+fi
 
 # Detectar Windows por múltiples métodos
 if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
@@ -125,7 +132,12 @@ echo -e "\n${BLUE}🔍 Buscando URLs HTTP/HTTPS...${NC}"
 URL_PATTERN="https?://[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}[^\s'\"\)]*"
 
 # Buscar URLs en archivos
-FOUND_URLS=$(echo "$FILES" | xargs grep -n -E "$URL_PATTERN" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+FOUND_URLS=""
+if [ "$IS_MACOS" = true ]; then
+    FOUND_URLS=$(echo "$FILES" | xargs -I {} grep -n -E "$URL_PATTERN" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+else
+    FOUND_URLS=$(echo "$FILES" | xargs grep -n -E "$URL_PATTERN" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+fi
 
 if [ -n "$FOUND_URLS" ]; then
     echo -e "${RED}❌ URLs hardcodeadas encontradas:${NC}"
@@ -166,7 +178,11 @@ API_PATTERNS=(
 )
 
 for pattern in "${API_PATTERNS[@]}"; do
-    API_MATCHES=$(echo "$FILES" | xargs grep -n -E -i "$pattern" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+    if [ "$IS_MACOS" = true ]; then
+        API_MATCHES=$(echo "$FILES" | xargs -I {} grep -n -E -i "$pattern" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+    else
+        API_MATCHES=$(echo "$FILES" | xargs grep -n -E -i "$pattern" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+    fi
     
     if [ -n "$API_MATCHES" ]; then
         if [ "$URLS_FOUND" = false ]; then
@@ -192,7 +208,11 @@ done
 # Buscar fetch/axios calls con URLs hardcodeadas
 echo -e "\n${BLUE}🔍 Verificando llamadas HTTP...${NC}"
 
-HTTP_CALLS=$(echo "$FILES" | xargs grep -n -E "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+if [ "$IS_MACOS" = true ]; then
+    HTTP_CALLS=$(echo "$FILES" | xargs -I {} grep -n -E "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+else
+    HTTP_CALLS=$(echo "$FILES" | xargs grep -n -E "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
+fi
 
 if [ -n "$HTTP_CALLS" ]; then
     if [ "$URLS_FOUND" = false ]; then

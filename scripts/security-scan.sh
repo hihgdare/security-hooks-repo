@@ -14,9 +14,16 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔍 Iniciando escaneo integral de seguridad...${NC}"
 
-# Detectar entorno Windows/PowerShell
+# Detectar entorno (Windows/PowerShell/macOS)
 IS_WINDOWS=false
 IS_POWERSHELL=false
+IS_MACOS=false
+
+# Detectar macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    IS_MACOS=true
+    echo -e "${BLUE}🍎 macOS detectado - aplicando ajustes de compatibilidad${NC}"
+fi
 
 # Detectar Windows por múltiples métodos
 if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
@@ -33,7 +40,7 @@ if [ "$IS_WINDOWS" = true ]; then
     if [ "$IS_POWERSHELL" = true ]; then
         echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
     else
-        echo -e "${BLUE}� Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+        echo -e "${BLUE}🖥️ Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
     fi
 fi
 
@@ -107,7 +114,16 @@ fi
 
 # 1. Verificar archivos de entorno
 echo -e "\n${BLUE}🔒 Verificando archivos de entorno...${NC}"
-if echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v "\.env\.example\|\.env\.template"; then
+
+# Usar grep compatible con macOS y Linux
+ENV_FILES_FOUND=""
+if [ "$IS_MACOS" = true ]; then
+    ENV_FILES_FOUND=$(echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v -E "\.env\.example|\.env\.template" || true)
+else
+    ENV_FILES_FOUND=$(echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v "\.env\.example\|\.env\.template" || true)
+fi
+
+if [ -n "$ENV_FILES_FOUND" ]; then
     echo -e "${RED}❌ Archivos .env detectados en commit${NC}"
     echo -e "${YELLOW}💡 Los archivos .env no deben commitearse. Usar .env.example en su lugar.${NC}"
     ERRORS=$((ERRORS + 1))
@@ -153,7 +169,11 @@ fi
 echo -e "\n${BLUE}📝 Verificando sintaxis...${NC}"
 
 # TypeScript/JavaScript
-TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [ "$IS_MACOS" = true ]; then
+    TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+else
+    TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+fi
 if [ -n "$TS_JS_FILES" ]; then
     if command -v tsc >/dev/null 2>&1; then
         echo "Verificando TypeScript..."
@@ -245,7 +265,12 @@ fi
 
 # 6. Verificar que no haya console.log o similar
 echo -e "\n${BLUE}🐛 Verificando statements de debug...${NC}"
-DEBUG_STATEMENTS=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' | xargs grep -l "console\." 2>/dev/null || true)
+# Comando compatible con macOS para xargs
+if [ "$IS_MACOS" = true ]; then
+    DEBUG_STATEMENTS=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' | xargs -r grep -l "console\." 2>/dev/null || true)
+else
+    DEBUG_STATEMENTS=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' | xargs -r grep -l "console\." 2>/dev/null || true)
+fi
 if [ -n "$DEBUG_STATEMENTS" ]; then
     warning "Console statements encontrados en:"
     echo "$DEBUG_STATEMENTS" | sed 's/^/  - /'
@@ -253,7 +278,16 @@ if [ -n "$DEBUG_STATEMENTS" ]; then
 fi
 
 # 7. Verificar comentarios TODO/FIXME
-TODO_COMMENTS=$(echo "$FILES_CHANGED" | xargs grep -l -i "TODO\|FIXME\|HACK\|XXX" 2>/dev/null || true)
+# Buscar comentarios TODO compatible con macOS
+if [ -n "$FILES_CHANGED" ]; then
+    if [ "$IS_MACOS" = true ]; then
+        TODO_COMMENTS=$(echo "$FILES_CHANGED" | xargs grep -l -i "TODO\|FIXME\|HACK\|XXX" 2>/dev/null || true)
+    else
+        TODO_COMMENTS=$(echo "$FILES_CHANGED" | xargs grep -l -i "TODO\|FIXME\|HACK\|XXX" 2>/dev/null || true)
+    fi
+else
+    TODO_COMMENTS=""
+fi
 if [ -n "$TODO_COMMENTS" ]; then
     warning "Comentarios TODO/FIXME encontrados en:"
     echo "$TODO_COMMENTS" | sed 's/^/  - /'

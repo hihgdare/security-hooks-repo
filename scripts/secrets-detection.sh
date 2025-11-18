@@ -14,9 +14,16 @@ NC='\033[0m'
 
 echo -e "${BLUE}🔐 Ejecutando detección de secretos...${NC}"
 
-# Detectar entorno Windows/PowerShell
+# Detectar entorno (Windows/PowerShell/macOS)
 IS_WINDOWS=false
 IS_POWERSHELL=false
+IS_MACOS=false
+
+# Detectar macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    IS_MACOS=true
+    echo -e "${BLUE}🍎 macOS detectado - aplicando ajustes de compatibilidad${NC}"
+fi
 
 # Detectar Windows por múltiples métodos
 if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
@@ -144,7 +151,13 @@ check_pattern() {
     
     echo -e "\n${BLUE}🔍 Buscando: $description${NC}"
     
-    local matches=$(echo "$FILES" | xargs grep -l -E -i "$pattern" 2>/dev/null || true)
+    local matches=""
+    if [ "$IS_MACOS" = true ]; then
+        # En macOS, usar xargs de forma más compatible
+        matches=$(echo "$FILES" | xargs -I {} grep -l -E -i "$pattern" {} 2>/dev/null || true)
+    else
+        matches=$(echo "$FILES" | xargs grep -l -E -i "$pattern" 2>/dev/null || true)
+    fi
     
     if [ -n "$matches" ]; then
         SECRETS_FOUND=true
@@ -152,11 +165,19 @@ check_pattern() {
         echo "$matches" | while read -r file; do
             echo -e "${RED}  📄 $file${NC}"
             # Mostrar las líneas que coinciden (sin mostrar el secreto completo)
-            grep -n -E -i "$pattern" "$file" 2>/dev/null | head -3 | while read -r line; do
-                line_num=$(echo "$line" | cut -d: -f1)
-                content=$(echo "$line" | cut -d: -f2- | sed 's/['\''"][^'\''\"]*['\''"]/**REDACTED**/g')
-                echo -e "${YELLOW}    Línea $line_num: $content${NC}"
-            done
+            if [ "$IS_MACOS" = true ]; then
+                grep -n -E -i "$pattern" "$file" 2>/dev/null | head -3 | while read -r line; do
+                    line_num=$(echo "$line" | cut -d: -f1)
+                    content=$(echo "$line" | cut -d: -f2- | sed "s/['\"][^'\"]*['\"]/**REDACTED**/g")
+                    echo -e "${YELLOW}    Línea $line_num: $content${NC}"
+                done
+            else
+                grep -n -E -i "$pattern" "$file" 2>/dev/null | head -3 | while read -r line; do
+                    line_num=$(echo "$line" | cut -d: -f1)
+                    content=$(echo "$line" | cut -d: -f2- | sed 's/['\''"][^'\''\"]*['\''"]/**REDACTED**/g')
+                    echo -e "${YELLOW}    Línea $line_num: $content${NC}"
+                done
+            fi
         done
         TOTAL_MATCHES=$((TOTAL_MATCHES + 1))
         return 1
@@ -181,7 +202,12 @@ check_pattern "-----BEGIN.*PRIVATE.*KEY-----" "Claves privadas"
 
 # Verificar patrones específicos de alta entropía
 echo -e "\n${BLUE}🔍 Verificando strings de alta entropía...${NC}"
-HIGH_ENTROPY_MATCHES=$(echo "$FILES" | xargs grep -E "['\"][A-Za-z0-9+/]{40,}={0,2}['\"]" 2>/dev/null || true)
+HIGH_ENTROPY_MATCHES=""
+if [ "$IS_MACOS" = true ]; then
+    HIGH_ENTROPY_MATCHES=$(echo "$FILES" | xargs -I {} grep -E "['\"][A-Za-z0-9+/]{40,}={0,2}['\"]" {} 2>/dev/null || true)
+else
+    HIGH_ENTROPY_MATCHES=$(echo "$FILES" | xargs grep -E "['\"][A-Za-z0-9+/]{40,}={0,2}['\"]" 2>/dev/null || true)
+fi
 if [ -n "$HIGH_ENTROPY_MATCHES" ]; then
     echo -e "${YELLOW}⚠️  Strings de alta entropía encontrados (posibles secretos codificados):${NC}"
     echo "$HIGH_ENTROPY_MATCHES" | head -5 | while read -r line; do
@@ -194,7 +220,12 @@ fi
 
 # Verificar variables de entorno sospechosas
 echo -e "\n${BLUE}🔍 Verificando variables de entorno sospechosas...${NC}"
-ENV_VARS=$(echo "$FILES" | xargs grep -E "(process\.env\.|import\.meta\.env\.)" 2>/dev/null | grep -v -E "(NODE_ENV|PUBLIC_|VITE_|NEXT_PUBLIC_)" || true)
+ENV_VARS=""
+if [ "$IS_MACOS" = true ]; then
+    ENV_VARS=$(echo "$FILES" | xargs -I {} grep -E "(process\\.env\\.|import\\.meta\\.env\\.)" {} 2>/dev/null | grep -v -E "(NODE_ENV|PUBLIC_|VITE_|NEXT_PUBLIC_)" || true)
+else
+    ENV_VARS=$(echo "$FILES" | xargs grep -E "(process\\.env\\.|import\\.meta\\.env\\.)" 2>/dev/null | grep -v -E "(NODE_ENV|PUBLIC_|VITE_|NEXT_PUBLIC_)" || true)
+fi
 if [ -n "$ENV_VARS" ]; then
     echo -e "${YELLOW}⚠️  Variables de entorno privadas encontradas:${NC}"
     echo "$ENV_VARS" | head -5 | while read -r line; do
