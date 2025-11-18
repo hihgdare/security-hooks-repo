@@ -2,49 +2,39 @@
 
 # Verificación de vulnerabilidades en dependencias
 # Este script escanea archivos de dependencias en busca de vulnerabilidades conocidas
+# Compatible con Windows (Git Bash/PowerShell/WSL), macOS y Linux
 
 set -e
 
-# Colores
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# Configuración inicial
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo -e "${BLUE}🛡️ Verificando vulnerabilidades en dependencias...${NC}"
-
-# Detectar entorno Windows
-IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    IS_WINDOWS=true
-    echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+# Cargar biblioteca de compatibilidad multiplataforma
+if [[ -f "$SCRIPT_DIR/platform-compatibility.sh" ]]; then
+    source "$SCRIPT_DIR/platform-compatibility.sh"
+else
+    echo "❌ Error: No se encontró platform-compatibility.sh" >&2
+    exit 1
 fi
+
+safe_echo "info" "Verificando vulnerabilidades en dependencias..."
 
 # Configuración
-PROJECT_ROOT="$(git rev-parse --show-toplevel)"
-
-# Normalizar paths para Windows
-if [ "$IS_WINDOWS" = true ]; then
-    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
-fi
+PROJECT_ROOT=$(get_git_root)
+SCRIPT_DIR=$(normalize_path "$SCRIPT_DIR")
+PROJECT_ROOT=$(normalize_path "$PROJECT_ROOT")
 
 cd "$PROJECT_ROOT"
 
 # Archivos de dependencias modificados
-DEP_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(package\.json|package-lock\.json|yarn\.lock|bun\.lockb|requirements\.txt|Pipfile\.lock|go\.mod|Cargo\.lock|composer\.json|composer\.lock)$' || true)
+DEP_FILES=$(get_modified_files "ACM" '^(package\.json|package-lock\.json|yarn\.lock|bun\.lockb|requirements\.txt|Pipfile\.lock|go\.mod|Cargo\.lock|composer\.json|composer\.lock)$')
 
-# En Windows, normalizar separadores de path
-if [ "$IS_WINDOWS" = true ]; then
-    DEP_FILES=$(echo "$DEP_FILES" | sed 's|\\|/|g')
+if [[ -z "$DEP_FILES" ]]; then
+    safe_echo "success" "No se modificaron archivos de dependencias"
+    safe_exit 0
 fi
 
-if [ -z "$DEP_FILES" ]; then
-    echo -e "${GREEN}✅ No se modificaron archivos de dependencias${NC}"
-    exit 0
-fi
-
-echo "Archivos de dependencias modificados:"
+safe_echo "info" "Archivos de dependencias modificados:"
 echo "$DEP_FILES" | sed 's/^/  - /'
 
 VULNERABILITIES_FOUND=false
@@ -58,215 +48,219 @@ show_vuln_summary() {
     local count="$2"
     local color="$3"
     
-    if [ "$count" -gt 0 ]; then
-        echo -e "${color}  $level: $count${NC}"
+    if [[ "$count" -gt 0 ]]; then
+        safe_echo "$color" "  $level: $count"
     fi
 }
 
 # Verificar Node.js (npm/yarn/bun)
 if echo "$DEP_FILES" | grep -E "package\.json|package-lock\.json|yarn\.lock|bun\.lockb" >/dev/null; then
-    echo -e "\n${BLUE}📦 Verificando dependencias Node.js...${NC}"
+    safe_echo "info" "Verificando dependencias Node.js..."
     
     # Intentar con npm audit
-    if [ -f "package-lock.json" ] && command -v npm >/dev/null 2>&1; then
-        echo "Ejecutando npm audit..."
+    if [[ -f "package-lock.json" ]] && command_exists npm; then
+        safe_echo "info" "Ejecutando npm audit..."
         
         # Ejecutar npm audit y capturar la salida
-        if npm audit --audit-level=moderate --json > /tmp/npm-audit.json 2>/dev/null; then
-            echo -e "${GREEN}✅ npm audit completado sin vulnerabilidades críticas${NC}"
+        TEMP_AUDIT="/tmp/npm-audit-$$.json"
+        if npm audit --audit-level=moderate --json > "$TEMP_AUDIT" 2>/dev/null; then
+            safe_echo "success" "npm audit completado sin vulnerabilidades críticas"
         else
-            AUDIT_RESULT=$(cat /tmp/npm-audit.json 2>/dev/null || echo '{}')
-            
-            # Parsear resultados (implementación básica)
-            CRITICAL_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"critical":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
-            HIGH_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"high":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
-            MODERATE_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"moderate":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
-            
-            if [ "$CRITICAL_VULNS" -gt 0 ] || [ "$HIGH_VULNS" -gt 0 ]; then
-                VULNERABILITIES_FOUND=true
-                echo -e "${RED}❌ Vulnerabilidades encontradas:${NC}"
-                show_vuln_summary "Críticas" "$CRITICAL_VULNS" "$RED"
-                show_vuln_summary "Altas" "$HIGH_VULNS" "$RED"
-                show_vuln_summary "Moderadas" "$MODERATE_VULNS" "$YELLOW"
+            if [[ -f "$TEMP_AUDIT" ]]; then
+                AUDIT_RESULT=$(cat "$TEMP_AUDIT")
                 
-                echo -e "\n${YELLOW}🔧 Para ver detalles: npm audit${NC}"
-                echo -e "${YELLOW}🔧 Para arreglar automáticamente: npm audit fix${NC}"
-            elif [ "$MODERATE_VULNS" -gt 0 ]; then
-                echo -e "${YELLOW}⚠️  $MODERATE_VULNS vulnerabilidades moderadas encontradas${NC}"
-                echo -e "${YELLOW}🔧 Revisar con: npm audit${NC}"
+                # Parsear resultados (implementación básica)
+                CRITICAL_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"critical":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
+                HIGH_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"high":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
+                MODERATE_VULNS=$(echo "$AUDIT_RESULT" | grep -o '"moderate":[0-9]*' | cut -d':' -f2 | head -1 || echo "0")
+                
+                # Remover posibles espacios
+                CRITICAL_VULNS=${CRITICAL_VULNS// /}
+                HIGH_VULNS=${HIGH_VULNS// /}
+                MODERATE_VULNS=${MODERATE_VULNS// /}
+                
+                if [[ "$CRITICAL_VULNS" -gt 0 ]] || [[ "$HIGH_VULNS" -gt 0 ]]; then
+                    VULNERABILITIES_FOUND=true
+                    safe_echo "error" "Vulnerabilidades encontradas:"
+                    show_vuln_summary "Críticas" "$CRITICAL_VULNS" "error"
+                    show_vuln_summary "Altas" "$HIGH_VULNS" "error"
+                    show_vuln_summary "Moderadas" "$MODERATE_VULNS" "warning"
+                    
+                    safe_echo "warning" "Para ver detalles: npm audit"
+                    safe_echo "warning" "Para arreglar automáticamente: npm audit fix"
+                elif [[ "$MODERATE_VULNS" -gt 0 ]]; then
+                    safe_echo "warning" "$MODERATE_VULNS vulnerabilidades moderadas encontradas"
+                    safe_echo "warning" "Revisar con: npm audit"
+                fi
             fi
         fi
-        rm -f /tmp/npm-audit.json
+        rm -f "$TEMP_AUDIT"
         
     # Intentar con yarn audit
-    elif [ -f "yarn.lock" ] && command -v yarn >/dev/null 2>&1; then
-        echo "Ejecutando yarn audit..."
+    elif [[ -f "yarn.lock" ]] && command_exists yarn; then
+        safe_echo "info" "Ejecutando yarn audit..."
         
-        if yarn audit --level moderate --json > /tmp/yarn-audit.json 2>/dev/null; then
-            echo -e "${GREEN}✅ yarn audit completado sin vulnerabilidades críticas${NC}"
+        TEMP_YARN_AUDIT="/tmp/yarn-audit-$$.json"
+        if yarn audit --level moderate --json > "$TEMP_YARN_AUDIT" 2>/dev/null; then
+            safe_echo "success" "yarn audit completado sin vulnerabilidades críticas"
         else
-            echo -e "${YELLOW}⚠️  yarn audit reportó vulnerabilidades${NC}"
-            echo -e "${YELLOW}🔧 Para ver detalles: yarn audit${NC}"
+            safe_echo "warning" "yarn audit reportó vulnerabilidades"
+            safe_echo "warning" "Para ver detalles: yarn audit"
             VULNERABILITIES_FOUND=true
         fi
-        rm -f /tmp/yarn-audit.json
+        rm -f "$TEMP_YARN_AUDIT"
         
     # Intentar con bun
-    elif [ -f "bun.lockb" ] && command -v bun >/dev/null 2>&1; then
-        echo "Verificando con bun..."
+    elif [[ -f "bun.lockb" ]] && command_exists bun; then
+        safe_echo "info" "Verificando con bun..."
         # Bun no tiene audit nativo aún, usar npm audit si está disponible
-        if command -v npm >/dev/null 2>&1; then
-            echo "Usando npm audit para verificar bun.lockb..."
+        if command_exists npm; then
+            safe_echo "info" "Usando npm audit para verificar bun.lockb..."
             if npm audit --audit-level=moderate > /dev/null 2>&1; then
-                echo -e "${GREEN}✅ Verificación completada sin vulnerabilidades críticas${NC}"
+                safe_echo "success" "Verificación completada sin vulnerabilidades críticas"
             else
-                echo -e "${YELLOW}⚠️  Se encontraron vulnerabilidades${NC}"
-                echo -e "${YELLOW}🔧 Para ver detalles: npm audit${NC}"
+                safe_echo "warning" "Se encontraron vulnerabilidades"
+                safe_echo "warning" "Para ver detalles: npm audit"
                 VULNERABILITIES_FOUND=true
             fi
         else
-            echo -e "${YELLOW}⚠️  npm no disponible para verificar bun.lockb${NC}"
+            safe_echo "warning" "npm no disponible para verificar bun.lockb"
         fi
     else
-        echo -e "${YELLOW}⚠️  No se pudo ejecutar audit - herramientas no disponibles${NC}"
+        safe_echo "warning" "No se pudo ejecutar audit - herramientas no disponibles"
     fi
 fi
 
 # Verificar Python
 if echo "$DEP_FILES" | grep -E "requirements\.txt|Pipfile\.lock" >/dev/null; then
-    echo -e "\n${BLUE}🐍 Verificando dependencias Python...${NC}"
+    safe_echo "info" "Verificando dependencias Python..."
     
-    if command -v pip >/dev/null 2>&1; then
+    if command_exists pip; then
         # Intentar con safety si está disponible
-        if command -v safety >/dev/null 2>&1; then
-            echo "Ejecutando safety check..."
-            if safety check --json > /tmp/safety-check.json 2>/dev/null; then
-                echo -e "${GREEN}✅ safety check completado sin vulnerabilidades${NC}"
+        if command_exists safety; then
+            safe_echo "info" "Ejecutando safety check..."
+            TEMP_SAFETY="/tmp/safety-check-$$.json"
+            if safety check --json > "$TEMP_SAFETY" 2>/dev/null; then
+                safe_echo "success" "safety check completado sin vulnerabilidades"
             else
-                echo -e "${YELLOW}⚠️  safety check encontró vulnerabilidades${NC}"
-                echo -e "${YELLOW}🔧 Para instalar safety: pip install safety${NC}"
-                echo -e "${YELLOW}🔧 Para ver detalles: safety check${NC}"
+                safe_echo "warning" "safety check encontró vulnerabilidades"
+                safe_echo "warning" "Para ver detalles: safety check"
                 VULNERABILITIES_FOUND=true
             fi
-            rm -f /tmp/safety-check.json
+            rm -f "$TEMP_SAFETY"
         else
-            echo -e "${YELLOW}⚠️  safety no instalado${NC}"
-            echo -e "${YELLOW}💡 Instalar con: pip install safety${NC}"
+            safe_echo "warning" "safety no instalado"
+            safe_echo "warning" "Instalar con: pip install safety"
         fi
         
         # Verificar pip-audit si está disponible
-        if command -v pip-audit >/dev/null 2>&1; then
-            echo "Ejecutando pip-audit..."
-            if pip-audit --desc --format=json > /tmp/pip-audit.json 2>/dev/null; then
-                echo -e "${GREEN}✅ pip-audit completado sin vulnerabilidades${NC}"
+        if command_exists pip-audit; then
+            safe_echo "info" "Ejecutando pip-audit..."
+            TEMP_PIP_AUDIT="/tmp/pip-audit-$$.json"
+            if pip-audit --desc --format=json > "$TEMP_PIP_AUDIT" 2>/dev/null; then
+                safe_echo "success" "pip-audit completado sin vulnerabilidades"
             else
-                echo -e "${YELLOW}⚠️  pip-audit encontró vulnerabilidades${NC}"
-                echo -e "${YELLOW}🔧 Para ver detalles: pip-audit${NC}"
+                safe_echo "warning" "pip-audit encontró vulnerabilidades"
+                safe_echo "warning" "Para ver detalles: pip-audit"
                 VULNERABILITIES_FOUND=true
             fi
-            rm -f /tmp/pip-audit.json
+            rm -f "$TEMP_PIP_AUDIT"
         fi
     else
-        echo -e "${YELLOW}⚠️  pip no disponible${NC}"
+        safe_echo "warning" "pip no disponible"
     fi
 fi
 
 # Verificar Go
 if echo "$DEP_FILES" | grep "go\.mod" >/dev/null; then
-    echo -e "\n${BLUE}🐹 Verificando dependencias Go...${NC}"
+    safe_echo "info" "Verificando dependencias Go..."
     
-    if command -v go >/dev/null 2>&1; then
+    if command_exists go; then
         # Verificar con govulncheck si está disponible
-        if command -v govulncheck >/dev/null 2>&1; then
-            echo "Ejecutando govulncheck..."
+        if command_exists govulncheck; then
+            safe_echo "info" "Ejecutando govulncheck..."
             if govulncheck ./... > /dev/null 2>&1; then
-                echo -e "${GREEN}✅ govulncheck completado sin vulnerabilidades${NC}"
+                safe_echo "success" "govulncheck completado sin vulnerabilidades"
             else
-                echo -e "${YELLOW}⚠️  govulncheck encontró vulnerabilidades${NC}"
-                echo -e "${YELLOW}🔧 Para ver detalles: govulncheck ./...${NC}"
+                safe_echo "warning" "govulncheck encontró vulnerabilidades"
+                safe_echo "warning" "Para ver detalles: govulncheck ./..."
                 VULNERABILITIES_FOUND=true
             fi
         else
-            echo -e "${YELLOW}⚠️  govulncheck no instalado${NC}"
-            echo -e "${YELLOW}💡 Instalar con: go install golang.org/x/vuln/cmd/govulncheck@latest${NC}"
+            safe_echo "warning" "govulncheck no instalado"
+            safe_echo "warning" "Instalar con: go install golang.org/x/vuln/cmd/govulncheck@latest"
         fi
     else
-        echo -e "${YELLOW}⚠️  Go no disponible${NC}"
+        safe_echo "warning" "Go no disponible"
     fi
 fi
 
 # Verificar Rust
 if echo "$DEP_FILES" | grep "Cargo\.lock" >/dev/null; then
-    echo -e "\n${BLUE}🦀 Verificando dependencias Rust...${NC}"
+    safe_echo "info" "Verificando dependencias Rust..."
     
-    if command -v cargo >/dev/null 2>&1; then
+    if command_exists cargo; then
         # Verificar con cargo-audit si está disponible
-        if command -v cargo-audit >/dev/null 2>&1; then
-            echo "Ejecutando cargo audit..."
+        if command_exists cargo-audit; then
+            safe_echo "info" "Ejecutando cargo audit..."
             if cargo audit > /dev/null 2>&1; then
-                echo -e "${GREEN}✅ cargo audit completado sin vulnerabilidades${NC}"
+                safe_echo "success" "cargo audit completado sin vulnerabilidades"
             else
-                echo -e "${YELLOW}⚠️  cargo audit encontró vulnerabilidades${NC}"
-                echo -e "${YELLOW}🔧 Para ver detalles: cargo audit${NC}"
+                safe_echo "warning" "cargo audit encontró vulnerabilidades"
+                safe_echo "warning" "Para ver detalles: cargo audit"
                 VULNERABILITIES_FOUND=true
             fi
         else
-            echo -e "${YELLOW}⚠️  cargo-audit no instalado${NC}"
-            echo -e "${YELLOW}💡 Instalar con: cargo install cargo-audit${NC}"
+            safe_echo "warning" "cargo-audit no instalado"
+            safe_echo "warning" "Instalar con: cargo install cargo-audit"
         fi
     else
-        echo -e "${YELLOW}⚠️  Cargo no disponible${NC}"
+        safe_echo "warning" "Cargo no disponible"
     fi
 fi
 
 # Verificar PHP
 if echo "$DEP_FILES" | grep -E "composer\.json|composer\.lock" >/dev/null; then
-    echo -e "\n${BLUE}🐘 Verificando dependencias PHP...${NC}"
+    safe_echo "info" "Verificando dependencias PHP..."
     
-    if command -v composer >/dev/null 2>&1; then
-        echo "Ejecutando composer audit..."
-        if composer audit --format=json > /tmp/composer-audit.json 2>/dev/null; then
-            echo -e "${GREEN}✅ composer audit completado sin vulnerabilidades${NC}"
+    if command_exists composer; then
+        safe_echo "info" "Ejecutando composer audit..."
+        TEMP_COMPOSER_AUDIT="/tmp/composer-audit-$$.json"
+        if composer audit --format=json > "$TEMP_COMPOSER_AUDIT" 2>/dev/null; then
+            safe_echo "success" "composer audit completado sin vulnerabilidades"
         else
-            echo -e "${YELLOW}⚠️  composer audit encontró vulnerabilidades${NC}"
-            echo -e "${YELLOW}🔧 Para ver detalles: composer audit${NC}"
+            safe_echo "warning" "composer audit encontró vulnerabilidades"
+            safe_echo "warning" "Para ver detalles: composer audit"
             VULNERABILITIES_FOUND=true
         fi
-        rm -f /tmp/composer-audit.json
+        rm -f "$TEMP_COMPOSER_AUDIT"
     else
-        echo -e "${YELLOW}⚠️  Composer no disponible${NC}"
+        safe_echo "warning" "Composer no disponible"
     fi
 fi
 
 # Recomendaciones generales
-echo -e "\n${BLUE}💡 Recomendaciones de seguridad:${NC}"
-echo -e "${BLUE}• Mantener dependencias actualizadas regularmente${NC}"
-echo -e "${BLUE}• Usar versiones específicas en lugar de rangos amplios${NC}"
-echo -e "${BLUE}• Revisar dependencias antes de agregarlas${NC}"
-echo -e "${BLUE}• Configurar alertas automáticas de seguridad${NC}"
+safe_echo "info" "Recomendaciones de seguridad:"
+safe_echo "info" "• Mantener dependencias actualizadas regularmente"
+safe_echo "info" "• Usar versiones específicas en lugar de rangos amplios"
+safe_echo "info" "• Revisar dependencias antes de agregarlas"
+safe_echo "info" "• Configurar alertas automáticas de seguridad"
 
 # Resultado final
-echo -e "\n${BLUE}📊 Resumen de verificación de dependencias:${NC}"
+safe_echo "info" "Resumen de verificación de dependencias:"
 
-if [ "$VULNERABILITIES_FOUND" = true ]; then
-    if [ "$CRITICAL_VULNS" -gt 0 ] || [ "$HIGH_VULNS" -gt 0 ]; then
-        echo -e "${RED}❌ Vulnerabilidades críticas o altas encontradas${NC}"
-        echo -e "${RED}🚫 Se recomienda no proceder hasta resolver las vulnerabilidades${NC}"
-        echo -e "${RED}🚫 DEPENDENCY VULNERABILITIES FOUND - COMMIT REJECTED${NC}"
-        # Flush output para Windows
-        exec 1>&1 2>&2
-        exit 1
+if [[ "$VULNERABILITIES_FOUND" == true ]]; then
+    if [[ "$CRITICAL_VULNS" -gt 0 ]] || [[ "$HIGH_VULNS" -gt 0 ]]; then
+        safe_echo "error" "Vulnerabilidades críticas o altas encontradas"
+        safe_echo "error" "Se recomienda no proceder hasta resolver las vulnerabilidades"
+        safe_exit 1 "DEPENDENCY VULNERABILITIES FOUND - COMMIT REJECTED"
     else
-        echo -e "${YELLOW}⚠️  Vulnerabilidades menores encontradas${NC}"
-        echo -e "${YELLOW}📋 Revisar y planificar actualizaciones${NC}"
-        echo -e "${GREEN}✅ Commit permitido con advertencia${NC}"
-        # Flush output para Windows
-        exec 1>&1 2>&2
-        exit 0
+        safe_echo "warning" "Vulnerabilidades menores encontradas"
+        safe_echo "warning" "Revisar y planificar actualizaciones"
+        safe_echo "success" "Commit permitido con advertencia"
+        safe_exit 0 "DEPENDENCY CHECK PASSED WITH WARNINGS"
     fi
 else
-    echo -e "${GREEN}✅ No se detectaron vulnerabilidades críticas${NC}"
-    # Flush output para Windows
-    exec 1>&1 2>&2
-    exit 0
+    safe_echo "success" "No se detectaron vulnerabilidades críticas"
+    safe_exit 0 "DEPENDENCY CHECK PASSED"
 fi

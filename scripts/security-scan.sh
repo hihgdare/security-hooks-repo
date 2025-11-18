@@ -2,202 +2,135 @@
 
 # Escaneo integral de seguridad
 # Este script ejecuta múltiples verificaciones de seguridad
+# Compatible con Windows (Git Bash/PowerShell/WSL), macOS y Linux
 
 set -e
 
-# Colores para output
+# Configuración inicial
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Cargar biblioteca de compatibilidad multiplataforma
+if [[ -f "$SCRIPT_DIR/platform-compatibility.sh" ]]; then
+    source "$SCRIPT_DIR/platform-compatibility.sh"
+else
+    echo "❌ Error: No se encontró platform-compatibility.sh" >&2
+    exit 1
+fi
+
+# Configuración de colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}🔍 Iniciando escaneo integral de seguridad...${NC}"
+safe_echo "info" "Iniciando escaneo integral de seguridad..."
 
-# Detectar entorno (Windows/PowerShell/macOS)
-IS_WINDOWS=false
-IS_POWERSHELL=false
-IS_MACOS=false
-
-# Detectar macOS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    IS_MACOS=true
-    echo -e "${BLUE}🍎 macOS detectado - aplicando ajustes de compatibilidad${NC}"
-fi
-
-# Detectar Windows por múltiples métodos
-if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
-    IS_WINDOWS=true
-fi
-
-# Detectar PowerShell
-if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
-    IS_POWERSHELL=true
-    IS_WINDOWS=true
-fi
-
-if [ "$IS_WINDOWS" = true ]; then
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
-    else
-        echo -e "${BLUE}🖥️ Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
-    fi
-fi
-
-# Configuración
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+# Configuración de paths
+PROJECT_ROOT=$(get_git_root)
 CONFIG_FILE="$PROJECT_ROOT/.security-config.yml"
-
-# Normalizar paths para Windows
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    SCRIPT_DIR=$(cygpath -u "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
-    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
-fi
+SCRIPT_DIR=$(normalize_path "$SCRIPT_DIR")
+PROJECT_ROOT=$(normalize_path "$PROJECT_ROOT")
 
 # Cargar configuración si existe
-if [ -f "$CONFIG_FILE" ]; then
-    echo -e "${BLUE}📋 Cargando configuración desde $CONFIG_FILE${NC}"
+if [[ -f "$CONFIG_FILE" ]]; then
+    safe_echo "info" "Cargando configuración desde $CONFIG_FILE"
 fi
-
-# Función para mostrar resultados
-show_result() {
-    if [ $1 -eq 0 ]; then
-        echo -e "${GREEN}✅ $2${NC}"
-    else
-        echo -e "${RED}❌ $2${NC}"
-        return 1
-    fi
-}
-
-# Función para mostrar warnings
-warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
 
 # Variable para trackear errores
 ERRORS=0
 
-echo -e "${BLUE}📁 Analizando archivos modificados...${NC}"
-FILES_CHANGED=$(git diff --cached --name-only --diff-filter=ACM)
+# Obtener archivos modificados
+safe_echo "info" "Analizando archivos modificados..."
+FILES_CHANGED=$(get_modified_files)
 
-# En Windows, normalizar separadores de path
-if [ "$IS_WINDOWS" = true ]; then
-    FILES_CHANGED=$(echo "$FILES_CHANGED" | sed 's|\\|/|g')
+if [[ -z "$FILES_CHANGED" ]]; then
+    safe_echo "warning" "No hay archivos en staging para verificar"
+    safe_exit 0
 fi
 
-if [ -z "$FILES_CHANGED" ]; then
-    echo -e "${YELLOW}⚠️  No hay archivos en staging para verificar${NC}"
-    exit 0
-fi
-
-echo "Archivos a verificar:"
+safe_echo "info" "Archivos a verificar:"
 echo "$FILES_CHANGED" | sed 's/^/  - /'
 
-# Diagnóstico para Windows/PowerShell
-if [ "$IS_WINDOWS" = true ]; then
-    echo -e "${BLUE}🔧 Diagnóstico Windows/PowerShell:${NC}"
-    echo "  - OSTYPE: $OSTYPE"
-    echo "  - Shell: $0"
-    echo "  - PowerShell: $IS_POWERSHELL"
-    echo "  - Git version: $(git --version 2>/dev/null || echo 'No disponible')"
-    echo "  - Script dir: $SCRIPT_DIR"
-    echo "  - Project root: $PROJECT_ROOT"
+# Función para mostrar resultados
+show_result() {
+    local code=$1
+    local message="$2"
     
-    # Variables específicas de PowerShell
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo "  - WINDIR: ${WINDIR:-'No definido'}"
-        echo "  - SYSTEMROOT: ${SYSTEMROOT:-'No definido'}"
-        echo "  - POWERSHELL_DISTRIBUTION_CHANNEL: ${POWERSHELL_DISTRIBUTION_CHANNEL:-'No definido'}"
+    if [[ $code -eq 0 ]]; then
+        safe_echo "success" "$message"
+    else
+        safe_echo "error" "$message"
+        return 1
     fi
-fi
+}
 
 # 1. Verificar archivos de entorno
-echo -e "\n${BLUE}🔒 Verificando archivos de entorno...${NC}"
+safe_echo "info" "Verificando archivos de entorno..."
 
-# Usar grep compatible con macOS y Linux
-ENV_FILES_FOUND=""
-if [ "$IS_MACOS" = true ]; then
-    ENV_FILES_FOUND=$(echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v -E "\.env\.example|\.env\.template" || true)
-else
-    ENV_FILES_FOUND=$(echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v "\.env\.example\|\.env\.template" || true)
-fi
+# Detectar archivos .env problemáticos
+ENV_FILES_FOUND=$(echo "$FILES_CHANGED" | grep -E "^\.env$|^\.env\.local$|^\.env\.production$" | grep -v -E "\.env\.example|\.env\.template" || true)
 
-if [ -n "$ENV_FILES_FOUND" ]; then
-    echo -e "${RED}❌ Archivos .env detectados en commit${NC}"
-    echo -e "${YELLOW}💡 Los archivos .env no deben commitearse. Usar .env.example en su lugar.${NC}"
+if [[ -n "$ENV_FILES_FOUND" ]]; then
+    safe_echo "error" "Archivos .env detectados en commit"
+    safe_echo "warning" "Los archivos .env no deben commitearse. Usar .env.example en su lugar."
     ERRORS=$((ERRORS + 1))
 else
     show_result 0 "No se detectaron archivos .env problemáticos"
 fi
 
 # 2. Ejecutar detección de secretos
-echo -e "\n${BLUE}🔐 Ejecutando detección de secretos...${NC}"
+safe_echo "info" "Ejecutando detección de secretos..."
 set +e  # Temporalmente deshabilitar exit en error para capturar código
 "$SCRIPT_DIR/secrets-detection.sh"
 SECRETS_EXIT_CODE=$?
 set -e  # Re-habilitar exit en error
 
-# Manejo específico para PowerShell
-if [ "$IS_POWERSHELL" = true ] && [ $SECRETS_EXIT_CODE -ne 0 ]; then
-    echo "SECRETS DETECTION FAILED" >&2
-fi
-
-if [ $SECRETS_EXIT_CODE -ne 0 ]; then
-    echo -e "${RED}❌ Detección de secretos falló${NC}"
+if [[ $SECRETS_EXIT_CODE -ne 0 ]]; then
+    safe_echo "error" "Detección de secretos falló"
     ERRORS=$((ERRORS + 1))
 fi
 
 # 3. Verificar URLs hardcodeadas
-echo -e "\n${BLUE}🌐 Verificando URLs hardcodeadas...${NC}"
+safe_echo "info" "Verificando URLs hardcodeadas..."
 set +e  # Temporalmente deshabilitar exit en error para capturar código
 "$SCRIPT_DIR/url-hardcoded-check.sh"
 URL_EXIT_CODE=$?
 set -e  # Re-habilitar exit en error
 
-# Manejo específico para PowerShell
-if [ "$IS_POWERSHELL" = true ] && [ $URL_EXIT_CODE -ne 0 ]; then
-    echo "URL CHECK FAILED" >&2
-fi
-
-if [ $URL_EXIT_CODE -ne 0 ]; then
-    echo -e "${RED}❌ Verificación de URLs falló${NC}"
+if [[ $URL_EXIT_CODE -ne 0 ]]; then
+    safe_echo "error" "Verificación de URLs falló"
     ERRORS=$((ERRORS + 1))
 fi
 
 # 4. Verificar sintaxis según tipo de archivo
-echo -e "\n${BLUE}📝 Verificando sintaxis...${NC}"
+safe_echo "info" "Verificando sintaxis..."
 
 # TypeScript/JavaScript
-if [ "$IS_MACOS" = true ]; then
-    TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
-else
-    TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
-fi
-if [ -n "$TS_JS_FILES" ]; then
-    if command -v tsc >/dev/null 2>&1; then
-        echo "Verificando TypeScript..."
-        TS_OUTPUT=$(tsc --noEmit --skipLibCheck 2>&1)
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}❌ Errores de TypeScript encontrados:${NC}"
+TS_JS_FILES=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [[ -n "$TS_JS_FILES" ]]; then
+    if command_exists tsc; then
+        safe_echo "info" "Verificando TypeScript..."
+        if ! TS_OUTPUT=$(tsc --noEmit --skipLibCheck 2>&1); then
+            safe_echo "error" "Errores de TypeScript encontrados:"
             echo "$TS_OUTPUT" | grep -E "error TS[0-9]+:" | head -10
             ERRORS=$((ERRORS + 1))
         else
             show_result 0 "Verificación de TypeScript exitosa"
         fi
-    elif command -v node >/dev/null 2>&1; then
-        echo "Verificando sintaxis JavaScript básica..."
-        for file in $TS_JS_FILES; do
-            if [ -f "$file" ]; then
-                JS_ERROR=$(node -c "$file" 2>&1)
-                if [ $? -ne 0 ]; then
-                    echo -e "${RED}❌ Error de sintaxis en $file:${NC}"
+    elif command_exists node; then
+        safe_echo "info" "Verificando sintaxis JavaScript básica..."
+        while read -r file; do
+            if [[ -f "$file" ]]; then
+                if ! JS_ERROR=$(node -c "$file" 2>&1); then
+                    safe_echo "error" "Error de sintaxis en $file:"
                     echo "$JS_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
-        done
-        if [ $ERRORS -eq 0 ]; then
+        done <<< "$TS_JS_FILES"
+        
+        if [[ $ERRORS -eq 0 ]]; then
             show_result 0 "Verificación de sintaxis JavaScript exitosa"
         fi
     fi
@@ -205,20 +138,20 @@ fi
 
 # Python
 PY_FILES=$(echo "$FILES_CHANGED" | grep -E '\.py$' || true)
-if [ -n "$PY_FILES" ]; then
-    if command -v python3 >/dev/null 2>&1; then
-        echo "Verificando sintaxis Python..."
-        for file in $PY_FILES; do
-            if [ -f "$file" ]; then
-                PY_ERROR=$(python3 -m py_compile "$file" 2>&1)
-                if [ $? -ne 0 ]; then
-                    echo -e "${RED}❌ Error de sintaxis en $file:${NC}"
+if [[ -n "$PY_FILES" ]]; then
+    if command_exists python3; then
+        safe_echo "info" "Verificando sintaxis Python..."
+        while read -r file; do
+            if [[ -f "$file" ]]; then
+                if ! PY_ERROR=$(python3 -m py_compile "$file" 2>&1); then
+                    safe_echo "error" "Error de sintaxis en $file:"
                     echo "$PY_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
-        done
-        if [ $ERRORS -eq 0 ]; then
+        done <<< "$PY_FILES"
+        
+        if [[ $ERRORS -eq 0 ]]; then
             show_result 0 "Verificación de sintaxis Python exitosa"
         fi
     fi
@@ -226,119 +159,70 @@ fi
 
 # JSON
 JSON_FILES=$(echo "$FILES_CHANGED" | grep -E '\.json$' || true)
-if [ -n "$JSON_FILES" ]; then
-    echo "Verificando sintaxis JSON..."
-    for file in $JSON_FILES; do
-        if [ -f "$file" ]; then
-            if command -v jq >/dev/null 2>&1; then
-                JSON_ERROR=$(jq empty "$file" 2>&1)
-                if [ $? -ne 0 ]; then
-                    echo -e "${RED}❌ JSON inválido en $file:${NC}"
+if [[ -n "$JSON_FILES" ]]; then
+    safe_echo "info" "Verificando sintaxis JSON..."
+    while read -r file; do
+        if [[ -f "$file" ]]; then
+            if command_exists jq; then
+                if ! JSON_ERROR=$(jq empty "$file" 2>&1); then
+                    safe_echo "error" "JSON inválido en $file:"
                     echo "$JSON_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
-            elif command -v python3 >/dev/null 2>&1; then
-                JSON_ERROR=$(python3 -m json.tool "$file" 2>&1)
-                if [ $? -ne 0 ]; then
-                    echo -e "${RED}❌ JSON inválido en $file:${NC}"
+            elif command_exists python3; then
+                if ! JSON_ERROR=$(python3 -m json.tool "$file" >/dev/null 2>&1); then
+                    safe_echo "error" "JSON inválido en $file:"
                     echo "$JSON_ERROR" | head -3
                     ERRORS=$((ERRORS + 1))
                 fi
             fi
         fi
-    done
-    if [ $ERRORS -eq 0 ]; then
+    done <<< "$JSON_FILES"
+    
+    if [[ $ERRORS -eq 0 ]]; then
         show_result 0 "Verificación de sintaxis JSON exitosa"
     fi
 fi
 
 # 5. Verificar dependencias si cambió package.json o similar
-echo -e "\n${BLUE}🛡️  Verificando vulnerabilidades en dependencias...${NC}"
+safe_echo "info" "Verificando vulnerabilidades en dependencias..."
 if echo "$FILES_CHANGED" | grep -E "package\.json|package-lock\.json|yarn\.lock|bun\.lockb|requirements\.txt" >/dev/null; then
     if ! "$SCRIPT_DIR/dependency-vulnerabilities.sh"; then
-        warning "Se encontraron vulnerabilidades en dependencias"
+        safe_echo "warning" "Se encontraron vulnerabilidades en dependencias"
         # No fallar el commit por vulnerabilidades, solo advertir
     fi
 else
-    echo "No se modificaron archivos de dependencias"
+    safe_echo "info" "No se modificaron archivos de dependencias"
 fi
 
 # 6. Verificar que no haya console.log o similar
-echo -e "\n${BLUE}🐛 Verificando statements de debug...${NC}"
-# Comando compatible con macOS para xargs
-if [ "$IS_MACOS" = true ]; then
-    DEBUG_STATEMENTS=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' | xargs -r grep -l "console\." 2>/dev/null || true)
-else
-    DEBUG_STATEMENTS=$(echo "$FILES_CHANGED" | grep -E '\.(ts|tsx|js|jsx)$' | xargs -r grep -l "console\." 2>/dev/null || true)
-fi
-if [ -n "$DEBUG_STATEMENTS" ]; then
-    warning "Console statements encontrados en:"
+safe_echo "info" "Verificando statements de debug..."
+DEBUG_STATEMENTS=$(search_pattern "console\." "$FILES_CHANGED" "-l")
+
+if [[ -n "$DEBUG_STATEMENTS" ]]; then
+    safe_echo "warning" "Console statements encontrados en:"
     echo "$DEBUG_STATEMENTS" | sed 's/^/  - /'
-    echo -e "${YELLOW}💡 Considera remover console statements para producción${NC}"
+    safe_echo "warning" "Considera remover console statements para producción"
 fi
 
 # 7. Verificar comentarios TODO/FIXME
-# Buscar comentarios TODO compatible con macOS
-if [ -n "$FILES_CHANGED" ]; then
-    if [ "$IS_MACOS" = true ]; then
-        TODO_COMMENTS=$(echo "$FILES_CHANGED" | xargs grep -l -i "TODO\|FIXME\|HACK\|XXX" 2>/dev/null || true)
-    else
-        TODO_COMMENTS=$(echo "$FILES_CHANGED" | xargs grep -l -i "TODO\|FIXME\|HACK\|XXX" 2>/dev/null || true)
+if [[ -n "$FILES_CHANGED" ]]; then
+    TODO_COMMENTS=$(search_pattern "TODO\|FIXME\|HACK\|XXX" "$FILES_CHANGED" "-l -i")
+    if [[ -n "$TODO_COMMENTS" ]]; then
+        safe_echo "warning" "Comentarios TODO/FIXME encontrados en:"
+        echo "$TODO_COMMENTS" | sed 's/^/  - /'
     fi
-else
-    TODO_COMMENTS=""
-fi
-if [ -n "$TODO_COMMENTS" ]; then
-    warning "Comentarios TODO/FIXME encontrados en:"
-    echo "$TODO_COMMENTS" | sed 's/^/  - /'
 fi
 
 # Resultado final
-echo -e "\n${BLUE}📊 Resumen del escaneo de seguridad:${NC}"
+safe_echo "info" "Resumen del escaneo de seguridad:"
 
-# En PowerShell, forzar salida inmediata y visible
-if [ "$IS_POWERSHELL" = true ]; then
-    echo ""
-    echo "=== SECURITY SCAN RESULT ==="
-fi
-
-if [ $ERRORS -eq 0 ]; then
-    echo -e "${GREEN}✅ Todas las verificaciones críticas pasaron exitosamente${NC}"
-    echo -e "${GREEN}🎉 Commit aprobado para continuar${NC}"
-    
-    # Flush específico para PowerShell
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo "RESULT: SUCCESS"
-        echo "=== END SECURITY SCAN ==="
-        sleep 0.1  # Pequeña pausa para PowerShell
-    fi
-    
-    # Flush output para Windows
-    exec 1>&1 2>&2
-    exit 0
+if [[ $ERRORS -eq 0 ]]; then
+    safe_echo "success" "Todas las verificaciones críticas pasaron exitosamente"
+    safe_echo "success" "Commit aprobado para continuar"
+    safe_exit 0 "SECURITY SCAN PASSED"
 else
-    echo -e "${RED}❌ Se encontraron $ERRORS errores críticos${NC}"
-    echo -e "${RED}🚫 Commit bloqueado hasta resolver los problemas${NC}"
-    echo -e "${RED}🚫 SECURITY SCAN FAILED - COMMIT REJECTED${NC}"
-    
-    # Manejo específico para PowerShell
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo ""
-        echo "RESULT: FAILED"
-        echo "ERRORS: $ERRORS"
-        echo "=== END SECURITY SCAN ==="
-        # En PowerShell, escribir a stderr también
-        echo "SECURITY SCAN FAILED - COMMIT BLOCKED" >&2
-        sleep 0.1  # Pequeña pausa para PowerShell
-    fi
-    
-    # Flush output para Windows
-    exec 1>&1 2>&2
-    
-    # En PowerShell, usar exit más agresivo
-    if [ "$IS_POWERSHELL" = true ]; then
-        exit 1
-    else
-        exit 1
-    fi
+    safe_echo "error" "Se encontraron $ERRORS errores críticos"
+    safe_echo "error" "Commit bloqueado hasta resolver los problemas"
+    safe_exit 1 "SECURITY SCAN FAILED - COMMIT REJECTED"
 fi

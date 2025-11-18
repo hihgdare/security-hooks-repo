@@ -2,56 +2,28 @@
 
 # Verificación de URLs hardcodeadas
 # Este script detecta URLs de APIs que deberían estar en variables de entorno
+# Compatible con Windows (Git Bash/PowerShell/WSL), macOS y Linux
 
 set -e
 
-# Colores
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# Configuración inicial
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo -e "${BLUE}🌐 Verificando URLs hardcodeadas...${NC}"
-
-# Detectar entorno (Windows/PowerShell/macOS)
-IS_WINDOWS=false
-IS_POWERSHELL=false
-IS_MACOS=false
-
-# Detectar macOS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    IS_MACOS=true
-    echo -e "${BLUE}🍎 macOS detectado - aplicando ajustes de compatibilidad${NC}"
+# Cargar biblioteca de compatibilidad multiplataforma
+if [[ -f "$SCRIPT_DIR/platform-compatibility.sh" ]]; then
+    source "$SCRIPT_DIR/platform-compatibility.sh"
+else
+    echo "❌ Error: No se encontró platform-compatibility.sh" >&2
+    exit 1
 fi
 
-# Detectar Windows por múltiples métodos
-if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]] || [[ -n "$SYSTEMROOT" ]]; then
-    IS_WINDOWS=true
-fi
-
-# Detectar PowerShell
-if [[ -n "$PSVersionTable" ]] || [[ "$SHELL" == *"powershell"* ]] || [[ -n "$POWERSHELL_DISTRIBUTION_CHANNEL" ]]; then
-    IS_POWERSHELL=true
-    IS_WINDOWS=true
-fi
-
-if [ "$IS_WINDOWS" = true ]; then
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo -e "${BLUE}🔵 PowerShell en Windows detectado - aplicando ajustes específicos${NC}"
-    else
-        echo -e "${BLUE}🧠 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
-    fi
-fi
+safe_echo "info" "Verificando URLs hardcodeadas..."
 
 # Configuración
-PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+PROJECT_ROOT=$(get_git_root)
 CONFIG_FILE="$PROJECT_ROOT/.security-config.yml"
-
-# Normalizar paths para Windows
-if [ "$IS_WINDOWS" = true ]; then
-    PROJECT_ROOT=$(cygpath -u "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
-fi
+SCRIPT_DIR=$(normalize_path "$SCRIPT_DIR")
+PROJECT_ROOT=$(normalize_path "$PROJECT_ROOT")
 
 # URLs permitidas por defecto (no se consideran problemáticas)
 ALLOWED_DOMAINS=(
@@ -92,13 +64,15 @@ ALLOWED_DOMAINS=(
 )
 
 # Cargar dominios permitidos adicionales desde configuración
-if [ -f "$CONFIG_FILE" ]; then
+if [[ -f "$CONFIG_FILE" ]]; then
     # Extraer dominios permitidos del YAML (implementación básica)
     ADDITIONAL_DOMAINS=$(grep -A 10 "allowed_domains:" "$CONFIG_FILE" 2>/dev/null | grep "^\s*-" | sed 's/^\s*-\s*//' | tr -d '"' || true)
-    if [ -n "$ADDITIONAL_DOMAINS" ]; then
-        echo -e "${BLUE}📋 Cargando dominios permitidos adicionales desde configuración${NC}"
+    if [[ -n "$ADDITIONAL_DOMAINS" ]]; then
+        safe_echo "info" "Cargando dominios permitidos adicionales desde configuración"
         while read -r domain; do
-            ALLOWED_DOMAINS+=("$domain")
+            if [[ -n "$domain" ]]; then
+                ALLOWED_DOMAINS+=("$domain")
+            fi
         done <<< "$ADDITIONAL_DOMAINS"
     fi
 fi
@@ -107,40 +81,30 @@ fi
 EXCLUSION_PATTERN=$(IFS='|'; echo "${ALLOWED_DOMAINS[*]}")
 
 # Archivos a verificar
-FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|py|go|rs|java)$' | grep -v -E '^(node_modules/|\.git/|dist/|build/|.*\.test\.|.*\.spec\.|.*\.mock\.)' || true)
+FILES=$(get_modified_files "ACM" '\.(ts|tsx|js|jsx|py|go|rs|java)$' | grep -v -E '^(node_modules/|\.git/|dist/|build/|.*\.test\.|.*\.spec\.|.*\.mock\.)' || true)
 
-# En Windows, normalizar separadores de path
-if [ "$IS_WINDOWS" = true ]; then
-    FILES=$(echo "$FILES" | sed 's|\\|/|g')
+if [[ -z "$FILES" ]]; then
+    safe_echo "success" "No hay archivos de código para verificar"
+    safe_exit 0
 fi
 
-if [ -z "$FILES" ]; then
-    echo -e "${GREEN}✅ No hay archivos de código para verificar${NC}"
-    exit 0
-fi
-
-echo "Archivos a verificar:"
+safe_echo "info" "Archivos a verificar:"
 echo "$FILES" | sed 's/^/  - /'
 
 URLS_FOUND=false
 TOTAL_URLS=0
 
 # Buscar URLs HTTP/HTTPS
-echo -e "\n${BLUE}🔍 Buscando URLs HTTP/HTTPS...${NC}"
+safe_echo "info" "Buscando URLs HTTP/HTTPS..."
 
 # Patrón para detectar URLs
 URL_PATTERN="https?://[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}[^\s'\"\)]*"
 
 # Buscar URLs en archivos
-FOUND_URLS=""
-if [ "$IS_MACOS" = true ]; then
-    FOUND_URLS=$(echo "$FILES" | xargs -I {} grep -n -E "$URL_PATTERN" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-else
-    FOUND_URLS=$(echo "$FILES" | xargs grep -n -E "$URL_PATTERN" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-fi
+FOUND_URLS=$(search_pattern "$URL_PATTERN" "$FILES" "-n -E" | grep -v -E "($EXCLUSION_PATTERN)" || true)
 
-if [ -n "$FOUND_URLS" ]; then
-    echo -e "${RED}❌ URLs hardcodeadas encontradas:${NC}"
+if [[ -n "$FOUND_URLS" ]]; then
+    safe_echo "error" "URLs hardcodeadas encontradas:"
     echo ""
     
     # Procesar cada URL encontrada
@@ -149,14 +113,14 @@ if [ -n "$FOUND_URLS" ]; then
         line_num=$(echo "$line" | cut -d: -f2)
         content=$(echo "$line" | cut -d: -f3-)
         
-        echo -e "${RED}  📄 $file:$line_num${NC}"
-        echo -e "${YELLOW}     $content${NC}"
+        safe_echo "error" "  📄 $file:$line_num"
+        safe_echo "warning" "     $content"
         
         # Extraer la URL específica
         url=$(echo "$content" | grep -o -E "$URL_PATTERN" | head -1)
-        if [ -n "$url" ]; then
+        if [[ -n "$url" ]]; then
             domain=$(echo "$url" | sed -E 's|https?://([^/]+).*|\1|')
-            echo -e "${BLUE}     🌐 Dominio: $domain${NC}"
+            safe_echo "info" "     🌐 Dominio: $domain"
         fi
         echo ""
     done
@@ -166,7 +130,7 @@ if [ -n "$FOUND_URLS" ]; then
 fi
 
 # Buscar patrones específicos de configuración de API
-echo -e "\n${BLUE}🔍 Buscando configuraciones de API...${NC}"
+safe_echo "info" "Buscando configuraciones de API..."
 
 API_PATTERNS=(
     "baseURL\s*[=:]\s*['\"]https?://[^'\"]*['\"]"
@@ -178,15 +142,11 @@ API_PATTERNS=(
 )
 
 for pattern in "${API_PATTERNS[@]}"; do
-    if [ "$IS_MACOS" = true ]; then
-        API_MATCHES=$(echo "$FILES" | xargs -I {} grep -n -E -i "$pattern" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-    else
-        API_MATCHES=$(echo "$FILES" | xargs grep -n -E -i "$pattern" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-    fi
+    API_MATCHES=$(search_pattern "$pattern" "$FILES" "-n -E -i" | grep -v -E "($EXCLUSION_PATTERN)" || true)
     
-    if [ -n "$API_MATCHES" ]; then
-        if [ "$URLS_FOUND" = false ]; then
-            echo -e "${RED}❌ Configuraciones de API hardcodeadas encontradas:${NC}"
+    if [[ -n "$API_MATCHES" ]]; then
+        if [[ "$URLS_FOUND" == false ]]; then
+            safe_echo "error" "Configuraciones de API hardcodeadas encontradas:"
             echo ""
         fi
         
@@ -195,8 +155,8 @@ for pattern in "${API_PATTERNS[@]}"; do
             line_num=$(echo "$line" | cut -d: -f2)
             content=$(echo "$line" | cut -d: -f3-)
             
-            echo -e "${RED}  📄 $file:$line_num${NC}"
-            echo -e "${YELLOW}     $content${NC}"
+            safe_echo "error" "  📄 $file:$line_num"
+            safe_echo "warning" "     $content"
             echo ""
         done
         
@@ -206,17 +166,13 @@ for pattern in "${API_PATTERNS[@]}"; do
 done
 
 # Buscar fetch/axios calls con URLs hardcodeadas
-echo -e "\n${BLUE}🔍 Verificando llamadas HTTP...${NC}"
+safe_echo "info" "Verificando llamadas HTTP..."
 
-if [ "$IS_MACOS" = true ]; then
-    HTTP_CALLS=$(echo "$FILES" | xargs -I {} grep -n -E "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" {} 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-else
-    HTTP_CALLS=$(echo "$FILES" | xargs grep -n -E "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" 2>/dev/null | grep -v -E "($EXCLUSION_PATTERN)" || true)
-fi
+HTTP_CALLS=$(search_pattern "(fetch|axios\.(get|post|put|delete|patch))\s*\(\s*['\"]https?://[^'\"]*['\"]" "$FILES" "-n -E" | grep -v -E "($EXCLUSION_PATTERN)" || true)
 
-if [ -n "$HTTP_CALLS" ]; then
-    if [ "$URLS_FOUND" = false ]; then
-        echo -e "${RED}❌ Llamadas HTTP con URLs hardcodeadas encontradas:${NC}"
+if [[ -n "$HTTP_CALLS" ]]; then
+    if [[ "$URLS_FOUND" == false ]]; then
+        safe_echo "error" "Llamadas HTTP con URLs hardcodeadas encontradas:"
         echo ""
     fi
     
@@ -225,8 +181,8 @@ if [ -n "$HTTP_CALLS" ]; then
         line_num=$(echo "$line" | cut -d: -f2)
         content=$(echo "$line" | cut -d: -f3-)
         
-        echo -e "${RED}  📄 $file:$line_num${NC}"
-        echo -e "${YELLOW}     $content${NC}"
+        safe_echo "error" "  📄 $file:$line_num"
+        safe_echo "warning" "     $content"
         echo ""
     done
     
@@ -235,55 +191,34 @@ if [ -n "$HTTP_CALLS" ]; then
 fi
 
 # Resultado final
-echo -e "\n${BLUE}📊 Resumen de verificación de URLs:${NC}"
+safe_echo "info" "Resumen de verificación de URLs:"
 
-if [ "$URLS_FOUND" = true ]; then
-    echo -e "${RED}❌ Se encontraron $TOTAL_URLS URLs hardcodeadas${NC}"
+if [[ "$URLS_FOUND" == true ]]; then
+    safe_echo "error" "Se encontraron $TOTAL_URLS URLs hardcodeadas"
     echo ""
-    echo -e "${YELLOW}🔧 Para solucionar:${NC}"
+    safe_echo "warning" "Para solucionar:"
     echo ""
-    echo -e "${YELLOW}1. Mover URLs a variables de entorno:${NC}"
-    echo -e "${YELLOW}   // Antes (❌)${NC}"
-    echo -e "${YELLOW}   const apiUrl = 'https://api.miapp.com';${NC}"
+    safe_echo "warning" "1. Mover URLs a variables de entorno:"
+    safe_echo "warning" "   // Antes (❌)"
+    safe_echo "warning" "   const apiUrl = 'https://api.miapp.com';"
     echo ""
-    echo -e "${YELLOW}   // Después (✅)${NC}"
-    echo -e "${YELLOW}   const apiUrl = process.env.REACT_APP_API_URL;${NC}"
-    echo -e "${YELLOW}   // o para Vite:${NC}"
-    echo -e "${YELLOW}   const apiUrl = import.meta.env.VITE_API_URL;${NC}"
+    safe_echo "warning" "   // Después (✅)"
+    safe_echo "warning" "   const apiUrl = process.env.REACT_APP_API_URL;"
+    safe_echo "warning" "   // o para Vite:"
+    safe_echo "warning" "   const apiUrl = import.meta.env.VITE_API_URL;"
     echo ""
-    echo -e "${YELLOW}2. Crear archivo .env.example con:${NC}"
-    echo -e "${YELLOW}   REACT_APP_API_URL=https://api.example.com${NC}"
-    echo -e "${YELLOW}   VITE_API_URL=https://api.example.com${NC}"
+    safe_echo "warning" "2. Crear archivo .env.example con:"
+    safe_echo "warning" "   REACT_APP_API_URL=https://api.example.com"
+    safe_echo "warning" "   VITE_API_URL=https://api.example.com"
     echo ""
-    echo -e "${YELLOW}3. Agregar dominios permitidos en .security-config.yml:${NC}"
-    echo -e "${YELLOW}   url_check:${NC}"
-    echo -e "${YELLOW}     allowed_domains:${NC}"
-    echo -e "${YELLOW}       - 'mi-api-publica.com'${NC}"
-    echo -e "${YELLOW}       - 'cdn.miapp.com'${NC}"
+    safe_echo "warning" "3. Agregar dominios permitidos en .security-config.yml:"
+    safe_echo "warning" "   url_check:"
+    safe_echo "warning" "     allowed_domains:"
+    safe_echo "warning" "       - 'mi-api-publica.com'"
+    safe_echo "warning" "       - 'cdn.miapp.com'"
     echo ""
-    echo -e "${RED}🚫 Commit bloqueado por URLs hardcodeadas${NC}"
-    echo -e "${RED}🚫 URL CHECK FAILED - COMMIT REJECTED${NC}"
-    
-    # Manejo específico para PowerShell
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo "HARDCODED URLS FOUND: $TOTAL_URLS" >&2
-        echo "RESULT: BLOCKED" >&2
-        sleep 0.1
-    fi
-    
-    # Flush output para Windows
-    exec 1>&1 2>&2
-    exit 1
+    safe_exit 1 "URL CHECK FAILED - COMMIT REJECTED"
 else
-    echo -e "${GREEN}✅ No se encontraron URLs problemáticas hardcodeadas${NC}"
-    
-    # Manejo específico para PowerShell
-    if [ "$IS_POWERSHELL" = true ]; then
-        echo "RESULT: SUCCESS"
-        sleep 0.1
-    fi
-    
-    # Flush output para Windows
-    exec 1>&1 2>&2
-    exit 0
+    safe_echo "success" "No se encontraron URLs problemáticas hardcodeadas"
+    safe_exit 0 "URL CHECK PASSED"
 fi

@@ -2,35 +2,55 @@
 
 # Instalador de pre-commit para proyectos
 # Este script instala y configura pre-commit en cualquier proyecto
+# Compatible con Windows (Git Bash/PowerShell/WSL), macOS y Linux
 
 set -e
 
-# Colores
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# Configuración inicial
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo -e "${BLUE}🔧 Instalador de Pre-commit Security Hooks${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-# Detectar entorno Windows
-IS_WINDOWS=false
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    IS_WINDOWS=true
-    echo -e "${BLUE}🪟 Entorno Windows detectado - aplicando ajustes de compatibilidad${NC}"
+# Cargar biblioteca de compatibilidad multiplataforma si existe
+if [[ -f "$SCRIPT_DIR/scripts/platform-compatibility.sh" ]]; then
+    source "$SCRIPT_DIR/scripts/platform-compatibility.sh"
+else
+    # Definir funciones básicas si no está disponible
+    safe_echo() {
+        local level="$1"
+        shift
+        local message="$@"
+        case "$level" in
+            "error") echo -e "\033[0;31m❌ $message\033[0m" ;;
+            "warning") echo -e "\033[1;33m⚠️ $message\033[0m" ;;
+            "success") echo -e "\033[0;32m✅ $message\033[0m" ;;
+            "info") echo -e "\033[0;34mℹ️ $message\033[0m" ;;
+            *) echo "$level $message" ;;
+        esac
+    }
+    
+    command_exists() {
+        command -v "$1" >/dev/null 2>&1
+    }
+    
+    get_git_root() {
+        git rev-parse --show-toplevel 2>/dev/null || echo "$(pwd)"
+    }
 fi
 
+safe_echo "info" "Instalador de Pre-commit Security Hooks"
+safe_echo "info" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 # Verificar que estamos en un repositorio Git
-if [ ! -d ".git" ]; then
-    echo -e "${RED}❌ Error: Este script debe ejecutarse desde la raíz de un repositorio Git${NC}"
+if [[ ! -d ".git" ]]; then
+    safe_echo "error" "Este script debe ejecutarse desde la raíz de un repositorio Git"
     exit 1
 fi
 
+PROJECT_ROOT=$(get_git_root)
+cd "$PROJECT_ROOT"
+
 # Detectar tipo de proyecto
 detect_project_type() {
-    if [ -f "package.json" ]; then
+    if [[ -f "package.json" ]]; then
         if grep -q "react" package.json 2>/dev/null; then
             echo "react"
         elif grep -q "vue" package.json 2>/dev/null; then
@@ -42,15 +62,15 @@ detect_project_type() {
         else
             echo "node"
         fi
-    elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+    elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]] || [[ -f "setup.py" ]]; then
         echo "python"
-    elif [ -f "go.mod" ]; then
+    elif [[ -f "go.mod" ]]; then
         echo "go"
-    elif [ -f "Cargo.toml" ]; then
+    elif [[ -f "Cargo.toml" ]]; then
         echo "rust"
-    elif [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+    elif [[ -f "pom.xml" ]] || [[ -f "build.gradle" ]]; then
         echo "java"
-    elif [ -f "composer.json" ]; then
+    elif [[ -f "composer.json" ]]; then
         echo "php"
     else
         echo "generic"
@@ -60,43 +80,43 @@ detect_project_type() {
 PROJECT_TYPE=$(detect_project_type)
 PROJECT_NAME=$(basename "$(pwd)")
 
-echo -e "${BLUE}📋 Información del proyecto:${NC}"
-echo -e "  • Nombre: $PROJECT_NAME"
-echo -e "  • Tipo detectado: $PROJECT_TYPE"
+safe_echo "info" "Información del proyecto:"
+echo "  • Nombre: $PROJECT_NAME"
+echo "  • Tipo detectado: $PROJECT_TYPE"
 
 # Verificar si pre-commit está instalado
-echo -e "\n${BLUE}🔍 Verificando pre-commit...${NC}"
-if ! command -v pre-commit >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠️  pre-commit no está instalado${NC}"
-    echo -e "${BLUE}💡 Opciones de instalación:${NC}"
-    echo -e "  • pip install pre-commit"
-    echo -e "  • brew install pre-commit"
-    echo -e "  • conda install -c conda-forge pre-commit"
+safe_echo "info" "Verificando pre-commit..."
+if ! command_exists pre-commit; then
+    safe_echo "warning" "pre-commit no está instalado"
+    safe_echo "info" "Opciones de instalación:"
+    echo "  • pip install pre-commit"
+    echo "  • brew install pre-commit"
+    echo "  • conda install -c conda-forge pre-commit"
     echo ""
     read -p "¿Quieres que intente instalarlo con pip? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if command -v pip >/dev/null 2>&1; then
-            echo -e "${BLUE}📦 Instalando pre-commit con pip...${NC}"
+        if command_exists pip; then
+            safe_echo "info" "Instalando pre-commit con pip..."
             pip install pre-commit
-        elif command -v pip3 >/dev/null 2>&1; then
-            echo -e "${BLUE}📦 Instalando pre-commit con pip3...${NC}"
+        elif command_exists pip3; then
+            safe_echo "info" "Instalando pre-commit con pip3..."
             pip3 install pre-commit
         else
-            echo -e "${RED}❌ pip no está disponible${NC}"
+            safe_echo "error" "pip no está disponible"
             exit 1
         fi
     else
-        echo -e "${RED}❌ pre-commit es requerido para continuar${NC}"
+        safe_echo "error" "pre-commit es requerido para continuar"
         exit 1
     fi
 fi
 
-echo -e "${GREEN}✅ pre-commit instalado: $(pre-commit --version)${NC}"
+safe_echo "success" "pre-commit instalado: $(pre-commit --version)"
 
 # Crear .pre-commit-config.yml si no existe
-if [ ! -f ".pre-commit-config.yml" ]; then
-    echo -e "\n${BLUE}📝 Creando .pre-commit-config.yml...${NC}"
+if [[ ! -f ".pre-commit-config.yml" ]]; then
+    safe_echo "info" "Creando .pre-commit-config.yml..."
     
     cat > .pre-commit-config.yml << 'EOF'
 # Configuración de Pre-commit Hooks
@@ -179,14 +199,14 @@ EOF
             ;;
     esac
 
-    echo -e "${GREEN}✅ .pre-commit-config.yml creado${NC}"
+    safe_echo "success" ".pre-commit-config.yml creado"
 else
-    echo -e "${YELLOW}⚠️  .pre-commit-config.yml ya existe${NC}"
+    safe_echo "warning" ".pre-commit-config.yml ya existe"
 fi
 
 # Crear configuración de seguridad si no existe
-if [ ! -f ".security-config.yml" ]; then
-    echo -e "\n${BLUE}📝 Creando .security-config.yml...${NC}"
+if [[ ! -f ".security-config.yml" ]]; then
+    safe_echo "info" "Creando .security-config.yml..."
     
     cat > .security-config.yml << EOF
 # Configuración de seguridad para el proyecto
@@ -233,19 +253,19 @@ reports:
   include_in_git: false
 EOF
 
-    echo -e "${GREEN}✅ .security-config.yml creado${NC}"
+    safe_echo "success" ".security-config.yml creado"
 else
-    echo -e "${YELLOW}⚠️  .security-config.yml ya existe${NC}"
+    safe_echo "warning" ".security-config.yml ya existe"
 fi
 
 # Actualizar .gitignore
-echo -e "\n${BLUE}📝 Actualizando .gitignore...${NC}"
-if [ -f ".gitignore" ]; then
+safe_echo "info" "Actualizando .gitignore..."
+if [[ -f ".gitignore" ]]; then
     if ! grep -q ".security-reports" .gitignore; then
         echo "" >> .gitignore
         echo "# Security reports" >> .gitignore
         echo ".security-reports/" >> .gitignore
-        echo -e "${GREEN}✅ .gitignore actualizado${NC}"
+        safe_echo "success" ".gitignore actualizado"
     fi
 else
     cat > .gitignore << 'EOF'
@@ -255,60 +275,59 @@ else
 # Pre-commit
 .pre-commit-config.local.yml
 EOF
-    echo -e "${GREEN}✅ .gitignore creado${NC}"
+    safe_echo "success" ".gitignore creado"
 fi
 
 # Instalar hooks
-echo -e "\n${BLUE}🔧 Instalando hooks de pre-commit...${NC}"
+safe_echo "info" "Instalando hooks de pre-commit..."
 if pre-commit install; then
-    echo -e "${GREEN}✅ Hooks instalados exitosamente${NC}"
+    safe_echo "success" "Hooks instalados exitosamente"
 else
-    echo -e "${RED}❌ Error instalando hooks${NC}"
+    safe_echo "error" "Error instalando hooks"
     exit 1
 fi
 
 # Instalar hooks de post-commit también
-echo -e "\n${BLUE}🔧 Instalando hooks de post-commit...${NC}"
+safe_echo "info" "Instalando hooks de post-commit..."
 if pre-commit install --hook-type post-commit; then
-    echo -e "${GREEN}✅ Hooks de post-commit instalados${NC}"
+    safe_echo "success" "Hooks de post-commit instalados"
 else
-    echo -e "${YELLOW}⚠️  Error instalando hooks de post-commit (opcional)${NC}"
+    safe_echo "warning" "Error instalando hooks de post-commit (opcional)"
 fi
 
 # Ejecutar en todos los archivos (primera vez)
-echo -e "\n${BLUE}🧪 Probando hooks en todos los archivos...${NC}"
+safe_echo "info" "Probando hooks en todos los archivos..."
 read -p "¿Quieres ejecutar pre-commit en todos los archivos ahora? (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${BLUE}🔍 Ejecutando pre-commit run --all-files...${NC}"
+    safe_echo "info" "Ejecutando pre-commit run --all-files..."
     if pre-commit run --all-files; then
-        echo -e "${GREEN}✅ Pre-commit ejecutado exitosamente en todos los archivos${NC}"
+        safe_echo "success" "Pre-commit ejecutado exitosamente en todos los archivos"
     else
-        echo -e "${YELLOW}⚠️  Pre-commit encontró algunos problemas que deben revisarse${NC}"
-        echo -e "${YELLOW}💡 Los hooks ahora están activos para futuros commits${NC}"
+        safe_echo "warning" "Pre-commit encontró algunos problemas que deben revisarse"
+        safe_echo "warning" "Los hooks ahora están activos para futuros commits"
     fi
 fi
 
 # Mostrar resumen final
-echo -e "\n${GREEN}🎉 ¡Instalación completada!${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}📋 Lo que se instaló:${NC}"
-echo -e "  ✅ Pre-commit hooks configurados"
-echo -e "  ✅ .pre-commit-config.yml creado/actualizado"
-echo -e "  ✅ .security-config.yml para personalización"
-echo -e "  ✅ .gitignore actualizado"
-echo -e "  ✅ Hooks de post-commit para reportes"
+safe_echo "success" "¡Instalación completada!"
+safe_echo "success" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+safe_echo "success" "Lo que se instaló:"
+echo "  ✅ Pre-commit hooks configurados"
+echo "  ✅ .pre-commit-config.yml creado/actualizado"
+echo "  ✅ .security-config.yml para personalización"
+echo "  ✅ .gitignore actualizado"
+echo "  ✅ Hooks de post-commit para reportes"
 echo ""
-echo -e "${BLUE}📚 Próximos pasos:${NC}"
-echo -e "  • Los hooks se ejecutarán automáticamente en cada commit"
-echo -e "  • Personaliza .security-config.yml según tus necesidades"
-echo -e "  • Configura notificaciones si lo deseas"
-echo -e "  • Para actualizar hooks: pre-commit autoupdate"
-echo -e "  • Para ejecutar manualmente: pre-commit run --all-files"
+safe_echo "info" "Próximos pasos:"
+echo "  • Los hooks se ejecutarán automáticamente en cada commit"
+echo "  • Personaliza .security-config.yml según tus necesidades"
+echo "  • Configura notificaciones si lo deseas"
+echo "  • Para actualizar hooks: pre-commit autoupdate"
+echo "  • Para ejecutar manualmente: pre-commit run --all-files"
 echo ""
-echo -e "${BLUE}🔗 Documentación:${NC}"
-echo -e "  • https://pre-commit.com/"
-echo -e "  • https://github.com/bifrost-admin-hig/security-hooks-repo"
+safe_echo "info" "Documentación:"
+echo "  • https://pre-commit.com/"
+echo "  • https://github.com/bifrost-admin-hig/security-hooks-repo"
 echo ""
-echo -e "${GREEN}✨ ¡Tu proyecto ahora tiene hooks de seguridad automatizados!${NC}"
-EOF
+safe_echo "success" "✨ ¡Tu proyecto ahora tiene hooks de seguridad automatizados!"
